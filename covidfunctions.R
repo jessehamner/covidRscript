@@ -160,7 +160,7 @@ make_state_data <- function(inputdf, stfips = '48') {
 }
 
 
-get_texas_population_by_county <- function(year = '2019') {
+get_texas_population_by_county <- function(year = 2019) {
   texas_population_url <- sprintf('https://www.dshs.state.tx.us/chs/popdat/st%s.shtm', year)
   tp1 <- GET(texas_population_url)
   if(identical(status_code(tp1), 200L)){
@@ -171,6 +171,14 @@ get_texas_population_by_county <- function(year = '2019') {
   } else {
     stop()
   }
+  
+  cols_to_fix <- c('Total', 'Anglo', 'Black', 'Hispanic', 'Other')
+  colnums_to_fix <- which(names(poplist) %in% cols_to_fix)
+  
+  for(x in seq(1, length(cols_to_fix))) {
+    poplist[[cols_to_fix[x]]] <- as.numeric(gsub(',', '', poplist[[cols_to_fix[x]]]))
+  }
+
   return(poplist)
 }
 

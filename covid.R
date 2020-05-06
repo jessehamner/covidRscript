@@ -186,8 +186,8 @@ nyt$posixdate <- as.Date(nyt$date, format = "%Y-%m-%d")
 ################################################################################
 
 setwd(homedir)
-lapply(X=statefipscodes[,1],
-       FUN=do_state_plots,
+lapply(X = statefipscodes[,1],
+       FUN = do_state_plots,
        inputjhu = covid3,
        inputnyt = nyt,
        stfipslist = statefipscodes)
@@ -247,11 +247,6 @@ setwd(uscountymapdir)
 
 uscountiesmap <- st_read(uscountymap, stringsAsFactors = FALSE)
 txcountymap <- uscountiesmap[which(uscountiesmap$STATEFP == '48'),]
-# gplot() +
-# geom_sf(data = txcountymap) +
-# ggtitle("Texas Counties") +
-# coord_sf()
-
 dfw_counties_map <- txcountymap[which(as.numeric(txcountymap$COUNTYFP) %in% dfw_fips),]
 
 txcovid3 <- covid3[which(covid3$stfips == '48'),]
@@ -266,9 +261,8 @@ dfw_counties_map$Confirmed <- as.numeric(lapply(X = dfw_counties_map$COUNTYFP,
       ))
 
 dfw_counties_map$Confirmed[which(dfw_counties_map$GEOID == '48425')] <- 0
-dfw_counties_map$Confirmed[which(dfw_counties_map$GEOID == 48425)] <- 0
 
-poplist <- get_texas_population_by_county('2019')
+poplist <- get_texas_population_by_county(2019)
 dfw_counties_map$Population <- 0
 dfw_counties_map$Population <- as.numeric(lapply(X = as.numeric(dfw_counties_map$COUNTYFP), 
                                      FUN = function(x) {
