@@ -11,6 +11,11 @@
 
 library(httr)
 library(gdata)
+library(sf)
+library(ggplot2)
+library(xml2)
+library(rvest)
+library(colorspace)
 
 homedir <- Sys.getenv('HOME')
 setwd('Dropbox/covidRscript')
@@ -202,6 +207,8 @@ plot_cumulative_cases(state = state,
 ################################################################################
 # Metro plots for DFW (aggregated)
 ################################################################################
+
+setwd(homedir)
 state <- 'DFW Metro'
 dfw_covid <- make_metro_subset(inputdf = covid3, 
                                stfips = '48',
@@ -223,15 +230,92 @@ plot_cumulative_cases(state = state,
 ################################################################################
 # TODO:
 #
-# Maps of infections, by county until something better is available publicly
-#  - It appears that some data are available by zip code?
-# Set up map shapefile or table in PostGIS or R
-# Set up county- or zipcode- level identifiers for each polygon, if needed
-# Copy/merge/cbind the daily info from JHU CSSE for each polygon
-#   and/or NYT, TX DPS/DPH, etc.
 # Determine county-level rate of change over last x days
 # Display basic polygon map
 #  - Add date, north arrow, scale, etc.
 #
 #
 ################################################################################
+
+mapdir <- 'Downloads/GIS Data'
+stateshapes <- 'tl_2017_us_state'
+uscountymapdir <- 'countyboundaries'
+uscountymap <- 'cb_2015_us_county_5m.shp'
+
+setwd(paste(homedir, mapdir, sep='/'))
+setwd(uscountymapdir)
+
+uscountiesmap <- st_read(uscountymap, stringsAsFactors = FALSE)
+txcountymap <- uscountiesmap[which(uscountiesmap$STATEFP == '48'),]
+# gplot() +
+# geom_sf(data = txcountymap) +
+# ggtitle("Texas Counties") +
+# coord_sf()
+
+dfw_counties_map <- txcountymap[which(as.numeric(txcountymap$COUNTYFP) %in% dfw_fips),]
+
+txcovid3 <- covid3[which(covid3$stfips == '48'),]
+covid3_dfw <- txcovid3[which(as.numeric(txcovid3$cofips) %in% dfw_fips),]
+covid3_dfw_yesterday <- covid3_dfw[which(covid3_dfw$date == Sys.Date() - 1),]
+
+dfw_counties_map$Confirmed <- 0
+dfw_counties_map$Confirmed <- as.numeric(lapply(X = dfw_counties_map$COUNTYFP, 
+       FUN = function(x) {
+         as.numeric(covid3_dfw_yesterday$Confirmed[which(covid3_dfw_yesterday$cofips == x)])
+        }
+      ))
+
+dfw_counties_map$Confirmed[which(dfw_counties_map$GEOID == '48425')] <- 0
+dfw_counties_map$Confirmed[which(dfw_counties_map$GEOID == 48425)] <- 0
+
+poplist <- get_texas_population_by_county('2019')
+dfw_counties_map$Population <- 0
+dfw_counties_map$Population <- as.numeric(lapply(X = as.numeric(dfw_counties_map$COUNTYFP), 
+                                     FUN = function(x) {
+                                       gsub(',', '', poplist$Total[which(poplist$FIPS == x)])
+                                     }
+))
+
+dfw_counties_map$percent_infected <- 100 * (dfw_counties_map$Confirmed / dfw_counties_map$Population)
+lowcolor <- "#AABBDF"
+highcolor <- "#00002A"
+todaytitle <- sprintf("DFW COVID-19 Cases as of %s & Percent of County Population Infected", Sys.Date())
+
+dfw_plot <- ggplot() +
+  geom_sf(data = dfw_counties_map, aes(fill = percent_infected)) + 
+  scale_fill_gradient(high = highcolor, low = lowcolor) + 
+  ggtitle(todaytitle) +
+  coord_sf(label_axes = list(bottom = "Longitude", left = "Latitude")
+           ) + 
+  geom_sf_label(aes(label = dfw_counties_map$Confirmed,
+                geometry = dfw_counties_map$geometry
+               )
+           ) +
+  guides(fill = guide_colorbar(title="Percent\nInfected")) + 
+    theme(legend.justification=c(0.0, 0.0), legend.position=c(0.89, 0.02)) + 
+  labs(x = "Longitude", y = "Latitude") +
+  geom_sf_label(data = dfw_counties_map,
+               na.rm = TRUE, 
+               nudge_y = 0.09,
+               mapping = aes(label = NAME,
+                             geometry = geometry
+                            ),
+               color = "gray40",
+               fill = "#ffffdd"
+              )
+
+setwd(homedir)
+
+
+# basic_plot(sprintf('dfw_covid_map_%s.png', Sys.Date()), dfw_plot)
+png(filename = 'testmap.png',
+    bg = "white",
+    res = 300,
+    units = "in",
+    pointsize = 14,
+    width = 7,
+    height = 6
+   )
+  dfw_plot
+dev.off()
+

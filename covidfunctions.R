@@ -160,7 +160,22 @@ make_state_data <- function(inputdf, stfips = '48') {
 }
 
 
-basic_plot <- function(filename, plotobj) {
+get_texas_population_by_county <- function(year = '2019') {
+  texas_population_url <- sprintf('https://www.dshs.state.tx.us/chs/popdat/st%s.shtm', year)
+  tp1 <- GET(texas_population_url)
+  if(identical(status_code(tp1), 200L)){
+    texaspop <- read_html(tp1)
+    poplist <- texaspop %>%
+      html_nodes("table") %>%
+      .[[2]] %>% html_table()
+  } else {
+    stop()
+  }
+  return(poplist)
+}
+
+
+basic_plot <- function(filename, plotobj, destination = Sys.getenv('HOME')) {
   png(filename = filename, 
       bg = "white", 
       res = 300, 
