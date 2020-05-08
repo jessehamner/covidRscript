@@ -211,24 +211,47 @@ basic_plot <- function(filename, plotobj, destination = Sys.getenv('HOME')) {
 }
 
 
-daily_increase_plot <- function(dfw_metro_covid, metro_label){
-  plot(dfw_metro_covid$posixdate, 
-       dfw_metro_covid$new_today, 
+longest_improvement <- function(metro_covid, min_days = 10) {
+  alldates <- seq(range(metro_covid$posixdate)[1], range(metro_covid$posixdate)[2], 1)
+  nrecords <- nrow(metro_covid)
+  best_day <- metro_covid$posixdate[1]
+  best_slope <- lm(metro_covid$new_today ~ metro_covid$posixdate)$coef[2]
+  
+  for (i in seq(1, (47 - min_days))) {
+    seqlength <- min_days
+    moving_window <- i + seqlength
+    testslope <- lm(metro_covid$new_today[i:moving_window] ~ metro_covid$posixdate[i:moving_window])$coef[2]
+    message(sprintf('%s) Duration: %s days; slope: %0.2f',i, seqlength, testslope))
+    if (testslope < best_slope) {
+      best_slope <- testslope
+      best_day <- i
+    }
+  
+  }
+  message(sprintf('%s) Best slope: %s -- for %s consecutive days.', best_day, best_slope, seqlength))
+  
+  return(c(best_day, seqlength, best_slope)) 
+}
+
+
+daily_increase_plot <- function(metro_covid, metro_label, lookback_days = 10){
+  plot(metro_covid$posixdate, 
+       metro_covid$new_today, 
        type = "l",
        main = sprintf('%s Daily New Confirmed Cases of COVID-19', metro_label),
        xlab = "",
        ylab = "New Cases Each Day"
   )
   
-  daily_regression <- lm(dfw_metro_covid$new_today ~ dfw_metro_covid$posixdate)
+  daily_regression <- lm(metro_covid$new_today ~ metro_covid$posixdate)
   slope_today <- daily_regression$coefficients[[2]]
   slope_label <- sprintf("%0.1f", slope_today)
-  last_week <- dfw_metro_covid[which(dfw_metro_covid$posixdate >= (max(dfw_metro_covid$posixdate) - lookback_days)),]
+  last_week <- metro_covid[which(metro_covid$posixdate >= (max(metro_covid$posixdate) - lookback_days)),]
   daily_regression_last_week <- lm(last_week$new_today ~ last_week$posixdate)
   slope_last_week_label <- sprintf("%0.1f", daily_regression_last_week$coefficients[[2]])
-  textposition <- (as.numeric(max(dfw_metro_covid$posixdate)) - as.numeric(min(dfw_metro_covid$posixdate))) * 0.5
+  textposition <- (as.numeric(max(metro_covid$posixdate)) - as.numeric(min(metro_covid$posixdate))) * 0.5
   
-  text(x = as.numeric(max(dfw_metro_covid$posixdate)) - textposition,
+  text(x = as.numeric(max(metro_covid$posixdate)) - textposition,
        y = 0,
        labels = c("Source: Johns Hopkins Univ. Center for Systems Science and Engineering"),
        cex = 0.5,
@@ -243,20 +266,33 @@ daily_increase_plot <- function(dfw_metro_covid, metro_label){
         lwd = 3
   )
   
-  ymax_today <- max(dfw_metro_covid$new_today)
+  best_params <- longest_improvement(dfw_covid, lookback_days)
+  best_period <- metro_covid[best_params[1]:(best_params[1] + best_params[2]),]
+  best_daily_regression <- lm(best_period$new_today ~ best_period$posixdate)
+  lines(best_period$posixdate,
+        predict.lm(best_daily_regression),
+        col = '#66aa66',
+        lwd = 3
+  )
+  best_slope_label <- sprintf("%0.1f", best_daily_regression$coefficients[[2]])
   
-  legend(x = as.numeric(min(dfw_metro_covid$posixdate)) - 0.5,
+  ymax_today <- max(metro_covid$new_today)
+  
+  legend(x = as.numeric(min(metro_covid$posixdate)) - 0.5,
          y = ymax_today,
          legend = c(sprintf("Average daily acceleration: %s cases", slope_label), 
                     sprintf("Avg. acceleration (last %s days): %s cases", 
                             lookback_days, slope_last_week_label
-                           )
+                           ),
+                    sprintf("Avg. acceleration (best %s days): %s cases", 
+                            lookback_days, best_slope_label
+                    )
                    ), 
-         lty = c(2, 1), 
-         lwd = c(3, 3), 
-         col = c("#6666bb", "#aa6666"))
+         lty = c(2, 1, 1), 
+         lwd = c(3, 3, 3), 
+         col = c("#6666bb", "#aa6666", "#66aa66"))
   
-  text(x = as.numeric(max(dfw_metro_covid$posixdate)) - textposition,
+  text(x = as.numeric(max(metro_covid$posixdate)) - textposition,
        y = ymax_today * 0.05,
        cex = 0.85, 
        labels = c("Note: data under-reported due to lack of testing."))
