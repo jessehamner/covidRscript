@@ -160,6 +160,18 @@ make_state_data <- function(inputdf, stfips = '48') {
 }
 
 
+get_us_population_by_county <- function(year = 2019) {
+  # Good for 2010-2019:
+  uspopdataurl <- 'https://www2.census.gov/programs-surveys/popest/datasets'
+  uspoppath <- sprintf('2010-%s/counties/totals', year)
+  uspopfile <- sprintf('co-est%s-alldata.csv', year)
+  urlpath <- paste(uspopdataurl, uspoppath, uspopfile, sep='/')
+  
+  
+  return(0)
+}
+
+
 get_texas_population_by_county <- function(year = 2019) {
   texas_population_url <- sprintf('https://www.dshs.state.tx.us/chs/popdat/st%s.shtm', year)
   tp1 <- GET(texas_population_url)

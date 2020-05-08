@@ -245,6 +245,8 @@ uscountymap <- 'cb_2015_us_county_5m.shp'
 setwd(paste(homedir, mapdir, sep='/'))
 setwd(uscountymapdir)
 
+uspopdataurl <- 'https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/counties/totals/co-est2019-alldata.csv'
+
 uscountiesmap <- st_read(uscountymap, stringsAsFactors = FALSE)
 txcountymap <- uscountiesmap[which(uscountiesmap$STATEFP == '48'),]
 dfw_counties_map <- txcountymap[which(as.numeric(txcountymap$COUNTYFP) %in% dfw_fips),]
