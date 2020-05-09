@@ -266,7 +266,7 @@ daily_increase_plot <- function(metro_covid, metro_label, lookback_days = 10){
         lwd = 3
   )
   
-  best_params <- longest_improvement(dfw_covid, lookback_days)
+  best_params <- longest_improvement(metro_covid, lookback_days)
   best_period <- metro_covid[best_params[1]:(best_params[1] + best_params[2]),]
   best_daily_regression <- lm(best_period$new_today ~ best_period$posixdate)
   lines(best_period$posixdate,
