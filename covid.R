@@ -34,6 +34,37 @@ lookback_days <- 10
 # Use the spreadsheet ('Sheet1').
 ################################################################################
 
+# FIPS list of nationwide MSAs:
+msa_list_url <- 'https://www.census.gov/geographies/reference-files/time-series/demo/metro-micro/delineation-files.html'
+msa_list_filename <- 'https://www2.census.gov/programs-surveys/metro-micro/geographies/reference-files/2020/delineation-files/list1_2020.xls'
+msafips_columns <- c('CBSACode', 'MetropolitanDivisionCode', 'CSACode',
+                     'CBSATitle', 'MSAName', 'MetropolitanDivisionTitle',
+                     'CSATitle', 'County_or_Equivalent', 'StateName',
+                     'stfips', 'cofips', 'Central_or_Outlying_County')
+msafips_colclasses = c('CBSA.Code' = 'character',
+                       'Metropolitan.Division.Code' = 'character',
+                       'CSA.Code' = 'character',
+                       'CBSA.Title' = 'character',
+                       'Metropolitan.Micropolitan.Statistical.Area' = 'character',
+                       'Metropolitan.Division.Title' = 'character',
+                       'CSA.Title' = 'character',
+                       'County.County.Equivalent' = 'character',
+                       'State.Name' = 'character',
+                       'FIPS.State.Code' = 'character',
+                       'FIPS.County.Code' = 'character',
+                       'Central.Outlying.County' = 'character'
+                      )
+
+msalist <- get_msa_list(fileurl = msa_list_filename, 
+                        col_classes = msafips_colclasses,
+                        msafips_columns = msafips_columns)
+msaname <- 'New Orleans-Metairie, LA'
+nola_fips <- get_metro_fips_2(msafips, msa_name = msaname, varname = 'CBSATitle')
+
+
+
+
+
 txfipsurl <- 'http://www.dshs.state.tx.us/chs/info/TxCoPhrMsa.xls'
 txfips <- get_texas_metro_county_list(fipsurl = txfipsurl)
 metro_msa_name <- 'Dallas-Fort Worth-Arlington'
@@ -227,10 +258,11 @@ plot_cumulative_cases(state = state,
                      )
 
 
+
+
 ################################################################################
 # TODO:
 #
-# Determine county-level rate of change over last x days
 # Display basic polygon map
 #  - Add date, north arrow, scale, etc.
 #
@@ -252,6 +284,8 @@ txcountymap <- uscountiesmap[which(uscountiesmap$STATEFP == '48'),]
 dfw_counties_map <- txcountymap[which(as.numeric(txcountymap$COUNTYFP) %in% dfw_fips),]
 
 txcovid3 <- covid3[which(covid3$stfips == '48'),]
+
+
 covid3_dfw <- txcovid3[which(as.numeric(txcovid3$cofips) %in% dfw_fips),]
 covid3_dfw_yesterday <- covid3_dfw[which(covid3_dfw$date == Sys.Date() - 1),]
 
@@ -275,6 +309,7 @@ dfw_counties_map$Population <- as.numeric(lapply(X = as.numeric(dfw_counties_map
 dfw_counties_map$percent_infected <- 100 * (dfw_counties_map$Confirmed / dfw_counties_map$Population)
 lowcolor <- "#AABBDF"
 highcolor <- "#00002A"
+
 todaytitle <- sprintf("DFW COVID-19 Cases as of %s & Percent of County Population Infected", Sys.Date())
 
 dfw_plot <- ggplot() +

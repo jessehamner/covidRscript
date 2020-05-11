@@ -221,26 +221,28 @@ longest_improvement <- function(metro_covid, min_days = 10) {
     seqlength <- min_days
     moving_window <- i + seqlength
     testslope <- lm(metro_covid$new_today[i:moving_window] ~ metro_covid$posixdate[i:moving_window])$coef[2]
-    message(sprintf('%s) Duration: %s days; slope: %0.2f',i, seqlength, testslope))
+    message(sprintf('%s) Duration: %s days; slope: %0.1f',i, seqlength, testslope))
     if (testslope < best_slope) {
       best_slope <- testslope
       best_day <- i
     }
   
   }
-  message(sprintf('%s) Best slope: %s -- for %s consecutive days.', best_day, best_slope, seqlength))
+  message(sprintf('%s) Best slope: %0.1f -- for %s consecutive days.', best_day, best_slope, seqlength))
   
   return(c(best_day, seqlength, best_slope)) 
 }
 
 
 daily_increase_plot <- function(metro_covid, metro_label, lookback_days = 10){
+  ymax_today <- max(metro_covid$new_today) * 1.2
   plot(metro_covid$posixdate, 
        metro_covid$new_today, 
        type = "l",
        main = sprintf('%s Daily New Confirmed Cases of COVID-19', metro_label),
        xlab = "",
-       ylab = "New Cases Each Day"
+       ylab = "New Cases Each Day",
+       ylim = c(0, ymax_today)
   )
   
   daily_regression <- lm(metro_covid$new_today ~ metro_covid$posixdate)
@@ -276,8 +278,6 @@ daily_increase_plot <- function(metro_covid, metro_label, lookback_days = 10){
   )
   best_slope_label <- sprintf("%0.1f", best_daily_regression$coefficients[[2]])
   
-  ymax_today <- max(metro_covid$new_today)
-  
   legend(x = as.numeric(min(metro_covid$posixdate)) - 0.5,
          y = ymax_today,
          legend = c(sprintf("Average daily acceleration: %s cases", slope_label), 
@@ -298,6 +298,32 @@ daily_increase_plot <- function(metro_covid, metro_label, lookback_days = 10){
        labels = c("Note: data under-reported due to lack of testing."))
   
   return(0)
+}
+
+
+holt_winters_smoothing <- function(covid) {
+  # Trend lines are one thing. Smoothing out regular spikes
+  # (cf the "Tuesday Effect") is another. Holt-Winters is an uncomplicated 
+  # smoothing and forecasting model transformation.
+  
+  # level component:
+  alpha_param <- NULL
+  
+  # trend component:
+  beta_param <- NULL
+  
+  # seasonal component:
+  gamma_param <- NULL
+  
+  start_periods <- 7
+  frequency_param <- 7
+  ts_start <- min(covid$posixtime)
+  ts_end <- max(covid$posixtime) 
+  time_series <- ts(covid, start = ts_start, end = ts_end, frequency = frequency_param) 
+  
+  fit <- HoltWinters(time_series, alpha = alpha_param, beta = beta_param, gamma = gamma_param)
+  
+  return(fit)
 }
 
 
@@ -416,6 +442,14 @@ get_metro_fips <- function(fipslist, msa_name){
 }
 
 
+# Some MSAs cross state lines:
+get_metro_fips_2 <- function(msafips, msa_name, varname = 'CBSATitle'){
+  msa_subset <- msafips[which(msafips[[varname]] == msa_name),]
+  retval <- subset(msa_subset, select=c('stfips', 'cofips'))
+  return(retval)
+}
+
+
 get_metro_fips_locally <- function(fipsdir = Sys.getenv('HOME'), 
                                    msa_name = 'Dallas-Fort Worth-Arlington',
                                    fipsfilename = 'PHR_MSA_County_masterlist.csv'){
@@ -428,5 +462,21 @@ get_metro_fips_locally <- function(fipsdir = Sys.getenv('HOME'),
   dfw_fips <- txfips$FIPS..[dfw_i]
   return(dfw_fips)
 }
+
+
+get_msa_list <- function(fileurl, col_classes, msafips_columns) {
+  file_like_object <- GET(fileurl)$content
+  writeBin(file_like_object, con = 'excelfips.xls')
+  
+  msafips <- read.xls(xls = 'excelfips.xls',
+                     pattern = 'CBSA Code',
+                     colClasses = col_classes
+                    )
+  names(msafips) <- msafips_columns
+  return(msafips)
+}
+
+
+
 
 # EOF
