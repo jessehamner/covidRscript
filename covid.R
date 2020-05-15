@@ -18,6 +18,7 @@ library(rvest)
 library(colorspace)
 
 homedir <- Sys.getenv('HOME')
+setwd(homedir)
 setwd('Dropbox/covidRscript')
 # Load helper functions for this work:
 source('covidfunctions.R')
@@ -59,11 +60,7 @@ msalist <- get_msa_list(fileurl = msa_list_filename,
                         col_classes = msafips_colclasses,
                         msafips_columns = msafips_columns)
 msaname <- 'New Orleans-Metairie, LA'
-nola_fips <- get_metro_fips_2(msafips, msa_name = msaname, varname = 'CBSATitle')
-
-
-
-
+nola_fips <- get_metro_fips_2(msalist, msa_name = msaname, varname = 'CBSATitle')
 
 txfipsurl <- 'http://www.dshs.state.tx.us/chs/info/TxCoPhrMsa.xls'
 txfips <- get_texas_metro_county_list(fipsurl = txfipsurl)
@@ -258,8 +255,6 @@ plot_cumulative_cases(state = state,
                      )
 
 
-
-
 ################################################################################
 # TODO:
 #
@@ -307,7 +302,7 @@ dfw_counties_map$Population <- as.numeric(lapply(X = as.numeric(dfw_counties_map
 ))
 
 dfw_counties_map$percent_infected <- 100 * (dfw_counties_map$Confirmed / dfw_counties_map$Population)
-lowcolor <- "#AABBDF"
+lowcolor <- "#EEEEEE"
 highcolor <- "#00002A"
 
 todaytitle <- sprintf("DFW COVID-19 Cases as of %s & Percent of County Population Infected", Sys.Date())
