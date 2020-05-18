@@ -25,7 +25,7 @@ source('covidfunctions.R')
 
 # Change this value to average the daily infection count growth rate 
 # for the last x days over a longer/shorter period:
-lookback_days <- 10
+lookback_days <- 14
 
 
 ################################################################################
@@ -226,7 +226,9 @@ state <- 'Texas'
 stfips <- '48'
 state_level <- make_state_data(inputdf = covid3, stfips = stfips)
 nyt_state_level <- nyt_state_match(nyt = nyt, stfips = stfips)
-plot_daily_increase(state = state, dataset = state_level)
+plot_daily_increase(state = state,
+                    dataset = state_level,
+                    lookback_days = lookback_days)
 plot_cumulative_cases(state = state,
                       jhu_data = state_level,
                       nyt_data = nyt_state_level)
@@ -247,20 +249,23 @@ nyt_dfw <- nyt_subset(nytdata = nyt,
                       countysubset = dfw_fips
                      )
 plot_daily_increase(state = state,
-                    dataset = dfw_covid
+                    dataset = dfw_covid,
+                    lookback_days = lookback_days
                    )
 plot_cumulative_cases(state = state,
                       jhu_data = dfw_covid,
                       nyt_data = nyt_dfw
                      )
 
+# lapply(X = seq(2000,14000,2000), FUN = function(x){dfw_covid$posixdate[which(dfw_covid$Confirmed > x)][1]})
 
 ################################################################################
 # TODO:
 #
 # Display basic polygon map
 #  - Add date, north arrow, scale, etc.
-#
+# Allow for generic MSA pulls by including state and county FIPS in the 
+# function arguments for make_metro_subset() and nyt_subset()
 #
 ################################################################################
 
@@ -279,7 +284,6 @@ txcountymap <- uscountiesmap[which(uscountiesmap$STATEFP == '48'),]
 dfw_counties_map <- txcountymap[which(as.numeric(txcountymap$COUNTYFP) %in% dfw_fips),]
 
 txcovid3 <- covid3[which(covid3$stfips == '48'),]
-
 
 covid3_dfw <- txcovid3[which(as.numeric(txcovid3$cofips) %in% dfw_fips),]
 covid3_dfw_yesterday <- covid3_dfw[which(covid3_dfw$date == Sys.Date() - 1),]
@@ -331,7 +335,6 @@ dfw_plot <- ggplot() +
               )
 
 setwd(homedir)
-
 
 # basic_plot(sprintf('dfw_covid_map_%s.png', Sys.Date()), dfw_plot)
 png(filename = 'testmap.png',

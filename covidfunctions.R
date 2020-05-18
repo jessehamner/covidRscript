@@ -70,10 +70,12 @@ nyt_subset <- function(nytdata, stfips, countysubset){
   return(nyt_subset_covid_match)
 }
 
-plot_daily_increase <- function(state, dataset) {
+plot_daily_increase <- function(state, dataset, lookback_days = 10) {
   message(sprintf('Writing daily case increase graphic for %s', state))
   basic_plot(sprintf('%s_covid19_confirmed_daily_increase.png', gsub(' ', '_', state)),
-             daily_increase_plot(dataset, metro_label = state)
+             daily_increase_plot(dataset,
+                                 metro_label = state,
+                                 lookback_days = lookback_days)
   )
   return (0)
 }
@@ -217,7 +219,7 @@ longest_improvement <- function(metro_covid, min_days = 10) {
   best_day <- metro_covid$posixdate[1]
   best_slope <- lm(metro_covid$new_today ~ metro_covid$posixdate)$coef[2]
   
-  for (i in seq(1, (47 - min_days))) {
+  for (i in seq(1, (nrow(metro_covid) - min_days))) {
     seqlength <- min_days
     moving_window <- i + seqlength
     testslope <- lm(metro_covid$new_today[i:moving_window] ~ metro_covid$posixdate[i:moving_window])$coef[2]
