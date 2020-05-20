@@ -65,6 +65,8 @@ msalist <- get_msa_list(fileurl = msa_list_filename,
 msaname <- 'New Orleans-Metairie, LA'
 nola_fips <- get_metro_fips_2(msalist, msa_name = msaname, varname = 'CBSATitle')
 
+lowcolor <- "#EEEEEE"
+highcolor <- "#00002A"
 
 txfipsurl <- 'http://www.dshs.state.tx.us/chs/info/TxCoPhrMsa.xls'
 txfips <- get_texas_metro_county_list(fipsurl = txfipsurl)
@@ -283,14 +285,67 @@ setwd(paste(homedir, mapdir, sep='/'))
 setwd(uscountymapdir)
 
 uspopdataurl <- 'https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/counties/totals/co-est2019-alldata.csv'
-
 uscountiesmap <- st_read(uscountymap, stringsAsFactors = FALSE)
-txcountymap <- uscountiesmap[which(uscountiesmap$STATEFP == '48'),]
-dfw_counties_map <- txcountymap[which(as.numeric(txcountymap$COUNTYFP) %in% dfw_fips),]
 
+msaname <- 'New Orleans-Metairie, LA'
+metro_fips <- get_metro_fips_2(msalist, msa_name = msaname, varname = 'CBSATitle')
+metrocountymap <- make_metro_map_generic(countiesmap = uscountiesmap,
+                                         msa_name = msaname,
+                                         msalist = msalist, 
+                                         covid_data = covid3
+                                        )
+
+todaytitle <- sprintf("%s COVID-19 Cases as of %s", msaname, Sys.Date())
+todaysubtitle <- sprintf("and Percent of County Population Infected")
+metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle)
+  
+  ggplot() +
+  theme(plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5)
+  ) +
+  geom_sf(data = metrocountymap,
+          aes(fill = percent_infected)
+  ) + 
+  scale_fill_gradient(high = highcolor,
+                      low = lowcolor
+  ) + 
+  ggtitle(label = todaytitle,
+          subtitle = todaysubtitle
+  ) +
+  coord_sf(label_axes = list(bottom = "Longitude",
+                             left = "Latitude")
+  ) + 
+  geom_sf_label(aes(label = metrocountymap$Confirmed,
+                    geometry = metrocountymap$geometry
+  )
+  ) +
+  guides(fill = guide_colorbar(title="Percent\nInfected")) + 
+  theme(legend.justification=c(0.0, 0.0),
+        legend.position=c(0.89, 0.02)
+  ) + 
+  labs(x = "Longitude", y = "Latitude") +
+  geom_sf_label(data = metrocountymap,
+                na.rm = TRUE, 
+                nudge_y = 0.09,
+                mapping = aes(label = NAME,
+                              geometry = geometry
+                ),
+                color = "gray40",
+                fill = "#ffffdd"
+  )
+
+
+
+
+txcountymap <- uscountiesmap[which(uscountiesmap$STATEFP == '48'),]
+dfw_counties_map <- txcountymap[which(txcountymap$COUNTYFP %in% dfw_fips$cofips),]
 txcovid3 <- covid3[which(covid3$stfips == '48'),]
 
-covid3_dfw <- txcovid3[which(as.numeric(txcovid3$cofips) %in% dfw_fips),]
+covid3_dfw <- make_metro_subset(inputdf = covid3, cofipslist = dfw_fips)
+covid3_dfw <- txcovid3[which(txcovid3$cofips %in% dfw_fips$cofips),]
+
+
+
 covid3_dfw_yesterday <- covid3_dfw[which(covid3_dfw$date == Sys.Date() - 1),]
 
 dfw_counties_map$Confirmed <- 0
@@ -300,34 +355,48 @@ dfw_counties_map$Confirmed <- as.numeric(lapply(X = dfw_counties_map$COUNTYFP,
         }
       ))
 
-dfw_counties_map$Confirmed[which(dfw_counties_map$GEOID == '48425')] <- 0
+dfw_counties_map$Confirmed[which(is.na(dfw_counties_map$Confirmed))] <- 0
 
+# poplist uses NUMERIC FIPS codes for counties. The rest of the data frames should not.
 poplist <- get_texas_population_by_county(2019)
 dfw_counties_map$Population <- 0
 dfw_counties_map$Population <- as.numeric(lapply(X = as.numeric(dfw_counties_map$COUNTYFP), 
-                                     FUN = function(x) {
-                                       gsub(',', '', poplist$Total[which(poplist$FIPS == x)])
-                                     }
-))
+                                                 FUN = function(x) {
+                                                                    gsub(',', '', poplist$Total[which(poplist$FIPS == x)])
+                                                                   }
+                                                )
+                                         )
 
 dfw_counties_map$percent_infected <- 100 * (dfw_counties_map$Confirmed / dfw_counties_map$Population)
-lowcolor <- "#EEEEEE"
-highcolor <- "#00002A"
 
-todaytitle <- sprintf("DFW COVID-19 Cases as of %s & Percent of County Population Infected", Sys.Date())
+
+todaytitle <- sprintf("%s COVID-19 Cases as of %s", metro_msa_name, Sys.Date())
+todaysubtitle <- sprintf("and Percent of County Population Infected")
 
 dfw_plot <- ggplot() +
-  geom_sf(data = dfw_counties_map, aes(fill = percent_infected)) + 
-  scale_fill_gradient(high = highcolor, low = lowcolor) + 
-  ggtitle(todaytitle) +
-  coord_sf(label_axes = list(bottom = "Longitude", left = "Latitude")
-           ) + 
+  theme(plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5)
+       ) +
+  geom_sf(data = dfw_counties_map,
+          aes(fill = percent_infected)
+         ) + 
+  scale_fill_gradient(high = highcolor,
+                      low = lowcolor
+                     ) + 
+  ggtitle(label = todaytitle,
+          subtitle = todaysubtitle
+         ) +
+  coord_sf(label_axes = list(bottom = "Longitude",
+                             left = "Latitude")
+          ) + 
   geom_sf_label(aes(label = dfw_counties_map$Confirmed,
                 geometry = dfw_counties_map$geometry
-               )
-           ) +
+                   )
+               ) +
   guides(fill = guide_colorbar(title="Percent\nInfected")) + 
-    theme(legend.justification=c(0.0, 0.0), legend.position=c(0.89, 0.02)) + 
+    theme(legend.justification=c(0.0, 0.0),
+          legend.position=c(0.89, 0.02)
+         ) + 
   labs(x = "Longitude", y = "Latitude") +
   geom_sf_label(data = dfw_counties_map,
                na.rm = TRUE, 
@@ -341,8 +410,10 @@ dfw_plot <- ggplot() +
 
 setwd(homedir)
 
+
+mapname <- sprintf("%s_map.png", gsub('-', '', gsub(' |,', '', metro_msa_name)))
 # basic_plot(sprintf('dfw_covid_map_%s.png', Sys.Date()), dfw_plot)
-png(filename = 'testmap.png',
+png(filename = mapname,
     bg = "white",
     res = 300,
     units = "in",

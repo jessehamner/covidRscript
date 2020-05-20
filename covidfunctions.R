@@ -133,9 +133,37 @@ nyt_state_match <- function(nyt, stfips, startdate = "2020-03-21"){
 }
 
 
-make_metro_subset <- function(inputdf, stfips, cofipslist) {
+make_metro_map <- function(countiesmap, msa_name, msalist, varname = 'CBSATitle') {
   
-  metro_covid_base <- inputdf[which(inputdf$stfips == stfips & inputdf$cofips %in% sprintf('%03.0f', cofipslist)),]
+  msa_fips <- get_metro_fips_2(msalist, msa_name = msa_name, varname = varname)
+  returnmap <- countiesmap[unlist(lapply(X=seq(1,nrow(msa_fips)), FUN = function(x){which(countiesmap$STATEFP == msa_fips$stfips[x] & countiesmap$COUNTYFP == msa_fips$cofips[x])})),]
+  return(returnmap)
+}
+
+
+# a tad long to be an anonymous function, so defined separately and more flexibly here.
+return_rows <- function(statefpname = 'stfips', cofpname = 'cofips', inputdf, msa_fips, recno) {
+  answer <- which(inputdf[[statefpname]] == msa_fips$stfips[recno] & 
+                  inputdf[[cofpname]] == msa_fips$cofips[recno]
+                 )
+  return(answer)  
+}
+
+
+make_metro_subset <- function(inputdf, cofipslist) {
+  
+  # Check both state and county per each row in cofipslist,
+  # as some metro areas cross state boundaries.
+  covid_rows <- unlist(lapply(X = seq(1,nrow(cofipslist)),
+                              FUN = function(x) { which(as.numeric(inputdf[["stfips"]]) == as.numeric(cofipslist$stfips[x]) & 
+                                                        as.numeric(inputdf[["cofips"]]) == as.numeric(cofipslist$cofips[x])
+                                                       )
+                                                }
+                             )
+                      )
+  
+  metro_covid_base <- inputdf[covid_rows,]
+  
   metro_covid_base$posixdate <- as.Date(metro_covid_base$date, format = "%Y-%m-%d")
   metro_covid <- aggregate(x = metro_covid_base$Confirmed,
                            FUN = sum,
@@ -190,9 +218,10 @@ get_us_population_by_county <- function(year = 2019) {
   uspoppath <- sprintf('2010-%s/counties/totals', year)
   uspopfile <- sprintf('co-est%s-alldata.csv', year)
   urlpath <- paste(uspopdataurl, uspoppath, uspopfile, sep='/')
-  
-  
-  return(0)
+  uspopbycounty <- read.csv(file=urlpath, header=TRUE)
+  uspopbycounty$stfips <- sprintf("%02.0f", uspopbycounty$STATE)
+  uspopbycounty$cofips <- sprintf("%03.0f", uspopbycounty$COUNTY)
+  return(uspopbycounty)
 }
 
 
@@ -473,9 +502,14 @@ get_texas_metro_county_list <- function(fipsurl){
 }
 
 
+# For Texas only, at the present moment
 get_metro_fips <- function(fipslist, msa_name){
+  
   metro_i <- which(fipslist$MSA == msa_name)
-  metro_fips <- as.numeric(fipslist$FIPS[metro_i])
+    # metro_fips <- as.numeric(fipslist$FIPS[metro_i])
+  metro_fips <- subset(x = fipslist[metro_i,], select = which(names(fipslist) %in% c('FIPS')) )
+  metro_fips$stfips <- '48'
+  names(metro_fips) <- c('cofips', 'stfips')
   return(metro_fips)
 }
 
@@ -523,13 +557,12 @@ make_metro_plots <- function(areaname,
                              stfips,
                              lookback_days) {
   
-  dfw_covid <- make_metro_subset(inputdf = jhudata, 
-                                 stfips = stfips,
-                                 cofipslist = dfw_fips
-  )
+  dfw_covid <- make_metro_subset(inputdf = jhudata, cofipslist = dfw_fips)
+  message('Metro subset dates:')
+  message(sprintf("%s,\n", dfw_covid$posixdate))
   nyt_dfw <- nyt_subset(nytdata = nytdata,
                         stfips = stfips,
-                        countysubset = dfw_fips
+                        countysubset = as.numeric(dfw_fips$cofips)
   )
   plot_daily_increase(state = areaname,
                       dataset = dfw_covid,
@@ -580,5 +613,94 @@ country_plot <- function(countryname,
   return(TRUE)  
 }
 
+
+make_metro_map_generic <- function(countiesmap, msa_name, msalist, covid_data) {
+  metro_fips <- get_metro_fips_2(msalist, 
+                                 msa_name = msa_name, 
+                                 varname = 'CBSATitle'
+  )
+  metrocountymap <- make_metro_map(countiesmap = countiesmap,
+                                   msa_name = msa_name,
+                                   msalist = msalist
+  )
+  
+  # Aggregated data for the entire MSA:
+  # metro_covid3 <- make_metro_subset(inputdf = covid3, cofipslist = nola_fips)
+  
+  # COVID-19 data broken out by counties:
+  metro_covid3 <- covid_data[unlist(lapply(X = seq(1, nrow(metro_fips)),
+                                           FUN = function(x) { which(covid_data$stfips == metro_fips$stfips[x] & 
+                                                                       covid_data$cofips == metro_fips$cofips[x]
+                                           )
+                                           }
+  )
+  ),]
+  covid3_metro_yesterday <- metro_covid3[which(metro_covid3$date == Sys.Date() - 1),]
+  metrocountymap$Confirmed <- 0
+  metrocountymap$Confirmed <- covid3_metro_yesterday$Confirmed[unlist(lapply(X = seq(1,nrow(metrocountymap)),
+                                                                             FUN = function(x) {
+                                                                               which(covid3_metro_yesterday$cofips == metrocountymap$COUNTYFP[x] & 
+                                                                                       covid3_metro_yesterday$stfips == metrocountymap$STATEFP[x]
+                                                                               )
+                                                                             }
+  )
+  )
+  ]
+  
+  
+  metrocountymap$Confirmed[which(is.na(metrocountymap$Confirmed))] <- 0
+  uspopbycounty <- get_us_population_by_county(year = 2019)
+  
+  metrocountymap$Population <- 0
+  metrocountymap$Population <- uspopbycounty$POPESTIMATE2019[unlist(lapply(X = seq(1,nrow(metrocountymap)), 
+                                                                           FUN = function(x) {
+                                                                             which(uspopbycounty$stfips == metrocountymap$STATEFP[x] & uspopbycounty$cofips == metrocountymap$COUNTYFP[x])
+                                                                           }
+  ))]
+  
+  metrocountymap$percent_infected <- 0
+  metrocountymap$percent_infected <- 100 * (metrocountymap$Confirmed / metrocountymap$Population)
+  
+  return(metrocountymap)
+}
+
+
+metro_map_plot <- function(metrocountymap, todaytitle, todaysubtitle) {
+  theplot <- ggplot() +
+    theme(plot.title = element_text(hjust = 0.5), 
+          plot.subtitle = element_text(hjust = 0.5)
+    ) +
+    geom_sf(data = metrocountymap,
+            aes(fill = percent_infected)
+    ) + 
+    scale_fill_gradient(high = highcolor,
+                        low = lowcolor
+    ) + 
+    ggtitle(label = todaytitle,
+            subtitle = todaysubtitle
+    ) +
+    coord_sf(label_axes = list(bottom = "Longitude",
+                               left = "Latitude")
+    ) + 
+    geom_sf_label(aes(label = metrocountymap$Confirmed,
+                      geometry = metrocountymap$geometry
+    )
+    ) +
+    guides(fill = guide_colorbar(title="Percent\nInfected")) + 
+    theme(legend.justification=c(0.0, 0.0),
+          legend.position=c(0.89, 0.02)
+    ) + 
+    labs(x = "Longitude", y = "Latitude") +
+    geom_sf_label(data = metrocountymap,
+                  na.rm = TRUE, 
+                  nudge_y = 0.09,
+                  mapping = aes(label = NAME,
+                                geometry = geometry
+                  ),
+                  color = "gray40",
+                  fill = "#ffffdd"
+    )
+  return(theplot)
+}
 
 # EOF
