@@ -5,6 +5,9 @@
 # and
 # https://github.com/nytimes/covid-19-data
 #
+# and
+# https://opendata.ecdc.europa.eu/covid19/casedistribution/csv
+#
 # Jesse Hamner, 2020
 #
 ################################################################################
@@ -61,6 +64,7 @@ msalist <- get_msa_list(fileurl = msa_list_filename,
                         msafips_columns = msafips_columns)
 msaname <- 'New Orleans-Metairie, LA'
 nola_fips <- get_metro_fips_2(msalist, msa_name = msaname, varname = 'CBSATitle')
+
 
 txfipsurl <- 'http://www.dshs.state.tx.us/chs/info/TxCoPhrMsa.xls'
 txfips <- get_texas_metro_county_list(fipsurl = txfipsurl)
@@ -202,6 +206,14 @@ nyt <- read.csv('us-counties.csv',
 )
 nyt$posixdate <- as.Date(nyt$date, format = "%Y-%m-%d")
 
+################################################################################
+# EU / ECDC data:
+################################################################################
+ecdcdata <- read.csv("https://opendata.ecdc.europa.eu/covid19/casedistribution/csv",
+                     na.strings = "",
+                     fileEncoding = "UTF-8-BOM")
+ecdclabel <- "Source: European Centre for Disease Prevention and Control"
+
 
 ################################################################################
 # Make state-level data from imported data, and plot them.
@@ -240,22 +252,15 @@ plot_cumulative_cases(state = state,
 
 setwd(homedir)
 state <- 'DFW Metro'
-dfw_covid <- make_metro_subset(inputdf = covid3, 
-                               stfips = '48',
-                               cofipslist = dfw_fips
-                              )
-nyt_dfw <- nyt_subset(nytdata = nyt,
-                      stfips = '48',
-                      countysubset = dfw_fips
-                     )
-plot_daily_increase(state = state,
-                    dataset = dfw_covid,
-                    lookback_days = lookback_days
-                   )
-plot_cumulative_cases(state = state,
-                      jhu_data = dfw_covid,
-                      nyt_data = nyt_dfw
-                     )
+
+make_metro_plots(areaname = state,
+                 countysubset = dfw_fips,
+                 stfips = '48',
+                 jhudata = covid3,
+                 nytdata = nyt,
+                 lookback_days = lookback_days)
+
+
 
 # lapply(X = seq(2000,14000,2000), FUN = function(x){dfw_covid$posixdate[which(dfw_covid$Confirmed > x)][1]})
 
@@ -347,4 +352,23 @@ png(filename = 'testmap.png',
    )
   dfw_plot
 dev.off()
+
+
+
+
+# covid3 -- 'Confirmed' and 'Deaths', clocked by 'date' -- converted 
+# ecdcdata -- "cases" and "deaths", clocked by 'dateRep' or 'day', 'month', 'year'
+
+cname <- 'Afghanistan'
+cabbr <- 'AFG'
+
+country_plot(
+  countryname = cname,
+  iso3abbr = cabbr,
+  jhudata = covid3,
+  ecdcdata = ecdcdata,
+  lookback_days = lookback_days,
+  sourcename = ecdclabel
+)
+
 

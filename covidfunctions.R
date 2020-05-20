@@ -23,7 +23,25 @@ import_fips_codes <- function(pageurl, fipscolclasses){
 }
 
 
-do_state_plots <- function(stfips, inputjhu, inputnyt, stfipslist) {
+make_country_subset <- function(dataset, cvar, cname) {
+  country_subset <- dataset[which(dataset[[cvar]] == cname),]
+  return(country_subset)
+}
+
+
+
+do_country_plot <- function(countryname, inputjhu) {
+  
+  
+  return(TRUE)
+}
+
+
+do_state_plots <- function(stfips, 
+                           inputjhu,
+                           inputnyt,
+                           stfipslist,
+                           sourcename = "Source: Johns Hopkins Univ. Center for Systems Science and Engineering") {
   stname = stfipslist$STATE_NAME[which(stfipslist$STATE == stfips)]
   state_level <- make_state_data(inputdf = inputjhu, stfips = stfips)
   nyt_state_level <- nyt_state_match(nyt = inputnyt, stfips = stfips)
@@ -48,7 +66,9 @@ do_state_plots <- function(stfips, inputjhu, inputnyt, stfipslist) {
     return(FALSE)
   }
     
-  plot_daily_increase(state = stname, dataset = state_level)
+  plot_daily_increase(state = stname,
+                      dataset = state_level,
+                      sourcename = sourcename)
   plot_cumulative_cases(state = stname,
                         jhu_data = state_level,
                         nyt_data = nyt_state_level)
@@ -70,7 +90,9 @@ nyt_subset <- function(nytdata, stfips, countysubset){
   return(nyt_subset_covid_match)
 }
 
-plot_daily_increase <- function(state, dataset, lookback_days = 10) {
+plot_daily_increase <- function(state, dataset, 
+                                lookback_days = 10,
+                                sourcename = "Source: Johns Hopkins Univ. Center for Systems Science and Engineering") {
   message(sprintf('Writing daily case increase graphic for %s', state))
   basic_plot(sprintf('%s_covid19_confirmed_daily_increase.png', gsub(' ', '_', state)),
              daily_increase_plot(dataset,
@@ -236,7 +258,10 @@ longest_improvement <- function(metro_covid, min_days = 10) {
 }
 
 
-daily_increase_plot <- function(metro_covid, metro_label, lookback_days = 10){
+daily_increase_plot <- function(metro_covid,
+                                metro_label,
+                                lookback_days = 10, 
+                                sourcename="Source: Johns Hopkins Univ. Center for Systems Science and Engineering"){
   ymax_today <- max(metro_covid$new_today) * 1.2
   plot(metro_covid$posixdate, 
        metro_covid$new_today, 
@@ -253,15 +278,7 @@ daily_increase_plot <- function(metro_covid, metro_label, lookback_days = 10){
   last_week <- metro_covid[which(metro_covid$posixdate >= (max(metro_covid$posixdate) - lookback_days)),]
   daily_regression_last_week <- lm(last_week$new_today ~ last_week$posixdate)
   slope_last_week_label <- sprintf("%0.1f", daily_regression_last_week$coefficients[[2]])
-  textposition <- (as.numeric(max(metro_covid$posixdate)) - as.numeric(min(metro_covid$posixdate))) * 0.5
-  
-  text(x = as.numeric(max(metro_covid$posixdate)) - textposition,
-       y = 0,
-       labels = c("Source: Johns Hopkins Univ. Center for Systems Science and Engineering"),
-       cex = 0.5,
-       font = 3
-  )
-  
+
   abline(daily_regression, col = '#6666bb', lty = 2, lwd = 3)
   
   lines(last_week$posixdate,
@@ -294,10 +311,29 @@ daily_increase_plot <- function(metro_covid, metro_label, lookback_days = 10){
          lwd = c(3, 3, 3), 
          col = c("#6666bb", "#aa6666", "#66aa66"))
   
+  
+  textposition <- (as.numeric(max(metro_covid$posixdate)) - as.numeric(min(metro_covid$posixdate))) * 0.5
+  xmax <- as.numeric(max(metro_covid$posixdate))
+  xmin <- as.numeric(min(metro_covid$posixdate))
+  framewidth <- xmax - xmin
+  
+  rect(xleft = (xmin + (framewidth * 0.125)), 
+       xright = (xmax - (framewidth * 0.125)),
+       ytop = (ymax_today * 0.09),
+       ybottom = (0 - (ymax_today * 0.02)),
+       col="#f9f9f9dd", 
+       border = "#ccccccee")
+  text(x = as.numeric(max(metro_covid$posixdate)) - textposition,
+       y = 0,
+       labels = c(sourcename),
+       cex = 0.5,
+       font = 3
+  )
   text(x = as.numeric(max(metro_covid$posixdate)) - textposition,
        y = ymax_today * 0.05,
        cex = 0.85, 
-       labels = c("Note: data under-reported due to lack of testing."))
+       labels = c("Note: data under-reported due to lack of testing.")
+  )
   
   return(0)
 }
@@ -479,6 +515,70 @@ get_msa_list <- function(fileurl, col_classes, msafips_columns) {
 }
 
 
+make_metro_plots <- function(areaname, 
+                             countysubset,
+                             sourcename,
+                             jhudata,
+                             nytdata,
+                             stfips,
+                             lookback_days) {
+  
+  dfw_covid <- make_metro_subset(inputdf = jhudata, 
+                                 stfips = stfips,
+                                 cofipslist = dfw_fips
+  )
+  nyt_dfw <- nyt_subset(nytdata = nytdata,
+                        stfips = stfips,
+                        countysubset = dfw_fips
+  )
+  plot_daily_increase(state = areaname,
+                      dataset = dfw_covid,
+                      lookback_days = lookback_days
+  )
+  plot_cumulative_cases(state = areaname,
+                        jhu_data = dfw_covid,
+                        nyt_data = nyt_dfw
+  )
+  
+  return(TRUE)  
+}
+
+
+country_plot <- function(countryname,
+                         iso3abbr,
+                         jhudata,
+                         ecdcdata,
+                         lookback_days,
+                         sourcename) {
+  
+  country_subset_1 <- make_country_subset(jhudata, 'Country_Region', countryname)
+  country_subset_2 <- make_country_subset(ecdcdata, 'countryterritoryCode', iso3abbr)
+  country_subset_2$posixdate <- as.Date(sprintf("%s-%s-%s", country_subset_2$month,
+                                                country_subset_2$day,
+                                                country_subset_2$year),
+                                        format = "%m-%d-%Y")
+  co_covid <- aggregate(x = country_subset_2$cases,
+                        FUN = sum,
+                        by = list(country_subset_2$posixdate))
+  names(co_covid) <- c('posixdate', 'Confirmed')
+  co_covid$deaths <- aggregate(x = country_subset_2$deaths,
+                               FUN = sum,
+                               by = list(country_subset_2$posixdate))$x
+  names(co_covid) <- c('posixdate', 'new_today', 'deaths')
+  
+  plot_daily_increase(state = countryname, 
+                      dataset = co_covid, 
+                      lookback_days = lookback_days,
+                      sourcename = sourcename)
+  
+  
+  # plot overall cases and deaths:
+  #plot_cumulative_cases(state = stname,
+  #                      jhu_data = state_level,
+  #                      nyt_data = nyt_state_level)
+  
+  return(TRUE)  
+}
 
 
 # EOF
