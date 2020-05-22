@@ -291,6 +291,8 @@ msaname <- 'New Orleans-Metairie, LA'
 msaname <- 'Minneapolis-St. Paul-Bloomington, MN-WI'
 msaname <- 'Chicago-Naperville-Elgin, IL-IN-WI'
 msaname <- 'Huntsville, AL'
+msaname <- 'Atlanta-Sandy Springs-Alpharetta, GA'
+setwd(paste(homedir, mapdir, sep='/'))
 
 metro_fips <- get_metro_fips_2(msalist, msa_name = msaname, varname = 'CBSATitle')
 metrocountymap <- make_metro_map_generic(countiesmap = uscountiesmap,
@@ -302,7 +304,8 @@ metrocountymap <- make_metro_map_generic(countiesmap = uscountiesmap,
 todaytitle <- sprintf("%s COVID-19 Cases as of %s", msaname, Sys.Date())
 todaysubtitle <- sprintf("and Percent of County Population Infected")
 metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle)
-
+todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", gsub(' ', '', gsub('-|,', '', msaname)), Sys.Date())
+ggsave(todaymapfilename, plot=metro_plot)
 
 
 txcountymap <- uscountiesmap[which(uscountiesmap$STATEFP == '48'),]
