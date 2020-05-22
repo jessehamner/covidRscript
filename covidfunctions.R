@@ -97,7 +97,8 @@ plot_daily_increase <- function(state, dataset,
   basic_plot(sprintf('%s_covid19_confirmed_daily_increase.png', gsub(' ', '_', state)),
              daily_increase_plot(dataset,
                                  metro_label = state,
-                                 lookback_days = lookback_days)
+                                 lookback_days = lookback_days,
+                                 sourcename = sourcename)
   )
   return (0)
 }

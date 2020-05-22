@@ -288,6 +288,10 @@ uspopdataurl <- 'https://www2.census.gov/programs-surveys/popest/datasets/2010-2
 uscountiesmap <- st_read(uscountymap, stringsAsFactors = FALSE)
 
 msaname <- 'New Orleans-Metairie, LA'
+msaname <- 'Minneapolis-St. Paul-Bloomington, MN-WI'
+msaname <- 'Chicago-Naperville-Elgin, IL-IN-WI'
+msaname <- 'Huntsville, AL'
+
 metro_fips <- get_metro_fips_2(msalist, msa_name = msaname, varname = 'CBSATitle')
 metrocountymap <- make_metro_map_generic(countiesmap = uscountiesmap,
                                          msa_name = msaname,
@@ -298,42 +302,6 @@ metrocountymap <- make_metro_map_generic(countiesmap = uscountiesmap,
 todaytitle <- sprintf("%s COVID-19 Cases as of %s", msaname, Sys.Date())
 todaysubtitle <- sprintf("and Percent of County Population Infected")
 metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle)
-  
-  ggplot() +
-  theme(plot.title = element_text(hjust = 0.5), 
-        plot.subtitle = element_text(hjust = 0.5)
-  ) +
-  geom_sf(data = metrocountymap,
-          aes(fill = percent_infected)
-  ) + 
-  scale_fill_gradient(high = highcolor,
-                      low = lowcolor
-  ) + 
-  ggtitle(label = todaytitle,
-          subtitle = todaysubtitle
-  ) +
-  coord_sf(label_axes = list(bottom = "Longitude",
-                             left = "Latitude")
-  ) + 
-  geom_sf_label(aes(label = metrocountymap$Confirmed,
-                    geometry = metrocountymap$geometry
-  )
-  ) +
-  guides(fill = guide_colorbar(title="Percent\nInfected")) + 
-  theme(legend.justification=c(0.0, 0.0),
-        legend.position=c(0.89, 0.02)
-  ) + 
-  labs(x = "Longitude", y = "Latitude") +
-  geom_sf_label(data = metrocountymap,
-                na.rm = TRUE, 
-                nudge_y = 0.09,
-                mapping = aes(label = NAME,
-                              geometry = geometry
-                ),
-                color = "gray40",
-                fill = "#ffffdd"
-  )
-
 
 
 
@@ -341,11 +309,8 @@ txcountymap <- uscountiesmap[which(uscountiesmap$STATEFP == '48'),]
 dfw_counties_map <- txcountymap[which(txcountymap$COUNTYFP %in% dfw_fips$cofips),]
 txcovid3 <- covid3[which(covid3$stfips == '48'),]
 
-covid3_dfw <- make_metro_subset(inputdf = covid3, cofipslist = dfw_fips)
+# covid3_dfw <- make_metro_subset(inputdf = covid3, cofipslist = dfw_fips)
 covid3_dfw <- txcovid3[which(txcovid3$cofips %in% dfw_fips$cofips),]
-
-
-
 covid3_dfw_yesterday <- covid3_dfw[which(covid3_dfw$date == Sys.Date() - 1),]
 
 dfw_counties_map$Confirmed <- 0
@@ -425,8 +390,6 @@ png(filename = mapname,
 dev.off()
 
 
-
-
 # covid3 -- 'Confirmed' and 'Deaths', clocked by 'date' -- converted 
 # ecdcdata -- "cases" and "deaths", clocked by 'dateRep' or 'day', 'month', 'year'
 
@@ -441,5 +404,11 @@ country_plot(
   lookback_days = lookback_days,
   sourcename = ecdclabel
 )
+
+cname <- 'Chile'
+cabbr <- 'CHL'
+
+
+
 
 
