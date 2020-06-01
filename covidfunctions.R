@@ -137,7 +137,9 @@ nyt_state_match <- function(nyt, stfips, startdate = "2020-03-21"){
 make_metro_map <- function(countiesmap, msa_name, msalist, varname = 'CBSATitle') {
   
   msa_fips <- get_metro_fips_2(msalist, msa_name = msa_name, varname = varname)
-  returnmap <- countiesmap[unlist(lapply(X=seq(1,nrow(msa_fips)), FUN = function(x){which(countiesmap$STATEFP == msa_fips$stfips[x] & countiesmap$COUNTYFP == msa_fips$cofips[x])})),]
+  returnmap <- countiesmap[unlist(lapply(X = seq(1, nrow(msa_fips)), 
+                                         FUN = function(x){ which(countiesmap$STATEFP == msa_fips$stfips[x] & countiesmap$COUNTYFP == msa_fips$cofips[x])}
+                                         )),]
   return(returnmap)
 }
 
@@ -644,9 +646,9 @@ make_metro_map_generic <- function(countiesmap, msa_name, msalist, covid_data) {
                                                                                        covid3_metro_yesterday$stfips == metrocountymap$STATEFP[x]
                                                                                )
                                                                              }
-  )
-  )
-  ]
+                                                                            )
+                                                                     )
+                                                              ]
   
   
   metrocountymap$Confirmed[which(is.na(metrocountymap$Confirmed))] <- 0
@@ -702,6 +704,31 @@ metro_map_plot <- function(metrocountymap, todaytitle, todaysubtitle) {
                   fill = "#ffffdd"
     )
   return(theplot)
+}
+
+
+make_complete_metro_plot <- function(msalist,
+                                     msa_name,
+                                     uscountiesmap,
+                                     covid_data,
+                                     dest_dir,
+                                     varname='CBSATitle') {
+  
+  setwd(dest_dir)
+  metro_fips <- get_metro_fips_2(msalist, msa_name = msa_name, varname = 'CBSATitle')
+  metrocountymap <- make_metro_map_generic(countiesmap = uscountiesmap,
+                                           msa_name = msa_name,
+                                           msalist = msalist, 
+                                           covid_data = covid3
+  )
+  
+  todaytitle <- sprintf("%s COVID-19 Cases as of %s", msa_name, Sys.Date())
+  todaysubtitle <- sprintf("and Percent of County Population Infected")
+  metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle)
+  todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", gsub(' ', '', gsub('-|,', '', msa_name)), Sys.Date())
+  ggsave(todaymapfilename, plot=metro_plot)
+  
+  return(TRUE)
 }
 
 # EOF

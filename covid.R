@@ -101,6 +101,12 @@ statefipscodes <- import_fips_codes(pageurl = fipsurl,
 # Johns Hopkins's data have changed format a few times.
 ################################################################################
 
+# After 5/29/2020:
+header4 <- c('FIPS', 'Admin2', 'Province_State', 'Country_Region', 'Last_Update',
+             'Lat', 'Long_', 'Confirmed', 'Deaths', 'Recovered', 'Active',
+             'Combined_Key', 'Incidence_Rate', 'Case.Fatality_Ratio'
+)
+
 # After 3/21/2020:
 header3 <- c('FIPS', 'Admin2', 'Province_State', 'Country_Region', 'Last_Update',
              'Lat', 'Long_', 'Confirmed', 'Deaths', 'Recovered', 'Active',
@@ -148,6 +154,25 @@ col_classes3 <- c('FIPS' = 'character',
                   'Active' = 'numeric',
                   'Combined_Key' = 'character')
 
+# FIPS,Admin2,Province_State,Country_Region,Last_Update,Lat,Long_,Confirmed,Deaths,
+# Recovered,Active,Combined_Key,Incidence_Rate,Case-Fatality_Ratio
+col_classes4 <- c('FIPS' = 'character',
+                  'Admin2' = 'character',
+                  'Province_State' = 'factor',
+                  'Country_Region' = 'character',
+                  'Last_Update' = 'character',
+                  'Lat' = 'double',
+                  'Long_' = 'double',
+                  'Confirmed' = 'numeric',
+                  'Deaths' = 'numeric',
+                  'Recovered' = 'numeric',
+                  'Active' = 'numeric',
+                  'Combined_Key' = 'character',
+                  'Incidence_Rate' = 'numeric',
+                  'Case.Fatality_Ratio' = 'numeric')
+
+
+
 
 ################################################################################
 # Update and import the Johns Hopkins COVID-19 data:
@@ -167,14 +192,21 @@ files <- dir(pattern = "\\d{2}-\\d{2}-\\d{4}\\.csv")
 # the file format changed on 03.01.2020 and 03.22.2020:
 breakpoint1 <- which(files == "02-29-2020.csv")
 breakpoint2 <- which(files == "03-21-2020.csv")
+breakpoint3 <- which(files == "05-28-2020.csv")
 
 files1 <- files[1:breakpoint1]
 files2 <- files[(breakpoint1 + 1):breakpoint2]
 files3 <- files[(breakpoint2 + 1):length(files)]
+files4 <- files[(breakpoint3 + 1):length(files)]
 
 covid1 <- import_covid_subset(fileslist = files1, col_classes = col_classes1)
 covid2 <- import_covid_subset(fileslist = files2, col_classes = col_classes2)
 covid3 <- import_covid_subset(fileslist = files3, col_classes = col_classes3)
+covid4 <- import_covid_subset(fileslist = files4, col_classes = col_classes4)
+
+covid4$newfips <- sprintf("%05.0f", as.integer(covid4$FIPS))
+covid4$stfips <- substr(covid4$newfips, 1,2)
+covid4$cofips <- substr(covid4$newfips, 3,5)
 
 # Set up the first two formats for a merge:
 covid1$Longitude <- as.double(0.0)
@@ -182,9 +214,18 @@ covid1$Latitude <- as.double(0.0)
 covid1 <- rbind(covid1, covid2)
 
 # The third format is a lot different.
+covid3$Incidence_Rate <- 0.0
+covid3$Case.Fatality_Ratio <- 0.0
+
 covid3$newfips <- sprintf("%05.0f", as.integer(covid3$FIPS))
 covid3$stfips <- substr(covid3$newfips, 1,2)
 covid3$cofips <- substr(covid3$newfips, 3,5)
+
+covid3 <- rbind(covid3, covid4)
+
+
+
+
 
 ################################################################################
 # New York Times US county-level data:
@@ -287,25 +328,74 @@ setwd(uscountymapdir)
 uspopdataurl <- 'https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/counties/totals/co-est2019-alldata.csv'
 uscountiesmap <- st_read(uscountymap, stringsAsFactors = FALSE)
 
-msaname <- 'New Orleans-Metairie, LA'
-msaname <- 'Minneapolis-St. Paul-Bloomington, MN-WI'
-msaname <- 'Chicago-Naperville-Elgin, IL-IN-WI'
-msaname <- 'Huntsville, AL'
-msaname <- 'Atlanta-Sandy Springs-Alpharetta, GA'
+msa_plot_list <- c('New Orleans-Metairie, LA',
+                   'Minneapolis-St. Paul-Bloomington, MN-WI',
+                   'Chicago-Naperville-Elgin, IL-IN-WI',
+                   'Huntsville, AL',
+                   'Atlanta-Sandy Springs-Alpharetta, GA'         
+                   )
+
+
 setwd(paste(homedir, mapdir, sep='/'))
 
-metro_fips <- get_metro_fips_2(msalist, msa_name = msaname, varname = 'CBSATitle')
-metrocountymap <- make_metro_map_generic(countiesmap = uscountiesmap,
-                                         msa_name = msaname,
-                                         msalist = msalist, 
-                                         covid_data = covid3
-                                        )
+#msaname <- 'New York-Newark-Jersey City, NY-NJ-PA'
+#metro_fips <- get_metro_fips_2(msalist, msa_name = msaname, varname = 'CBSATitle')
 
-todaytitle <- sprintf("%s COVID-19 Cases as of %s", msaname, Sys.Date())
+#cleanerfips <- unique(metro_covid3$FIPS)
+#lapply(X=cleanerfips, FUN=function(x){c(metro_covid3$stfips[which(metro_covid3$FIPS == x)][1], metro_covid3$cofips[which(metro_covid3$FIPS == x)][1]) })
+
+#metrocountymap <- make_metro_map(countiesmap = uscountiesmap,
+#                                 msa_name = msaname,
+#                                 msalist = msalist
+#)
+#metro_covid3 <- covid3[unlist(lapply(X = seq(1, nrow(metro_fips)),
+#                                         FUN = function(x) { which(covid3$stfips == metro_fips$stfips[x] & 
+#                                                                     covid3$cofips == metro_fips$cofips[x]
+#                                         )
+#                                         }
+#)
+#),]
+
+
+
+covid3_metro_yesterday <- metro_covid3[which(metro_covid3$date == Sys.Date() - 1),]
+metrocountymap$Confirmed <- 0
+metrocountymap$Confirmed <- covid3_metro_yesterday$Confirmed[unlist(lapply(X = seq(1,nrow(metrocountymap)),
+                                                                           FUN = function(x) {
+                                                                             which(covid3_metro_yesterday$cofips == metrocountymap$COUNTYFP[x] & 
+                                                                                     covid3_metro_yesterday$stfips == metrocountymap$STATEFP[x]
+                                                                             )
+                                                                           }
+                                                                          )
+                                                                   )
+                                                            ]
+
+
+todaytitle <- sprintf("%s COVID-19 Cases as of %s", msa_name, Sys.Date())
 todaysubtitle <- sprintf("and Percent of County Population Infected")
 metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle)
-todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", gsub(' ', '', gsub('-|,', '', msaname)), Sys.Date())
+todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", gsub(' ', '', gsub('-|,', '', msa_name)), Sys.Date())
 ggsave(todaymapfilename, plot=metro_plot)
+
+# Graphs of infections, deaths, and rates:
+make_complete_metro_plot(msalist = msalist,
+                         msa_name = msaname,
+                         uscountiesmap = uscountiesmap,
+                         covid_data = covid3,
+                         dest_dir = homedir
+                        )
+
+
+for(i in seq(1:length(msa_plot_list))) {
+  make_complete_metro_plot(msalist = msalist,
+                           msa_name = msa_plot_list[i],
+                           uscountiesmap = uscountiesmap,
+                           covid_data = covid3,
+                           dest_dir = homedir)
+  
+}
+
+
 
 
 txcountymap <- uscountiesmap[which(uscountiesmap$STATEFP == '48'),]
