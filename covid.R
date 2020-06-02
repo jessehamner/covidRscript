@@ -196,7 +196,7 @@ breakpoint3 <- which(files == "05-28-2020.csv")
 
 files1 <- files[1:breakpoint1]
 files2 <- files[(breakpoint1 + 1):breakpoint2]
-files3 <- files[(breakpoint2 + 1):length(files)]
+files3 <- files[(breakpoint2 + 1):breakpoint3]
 files4 <- files[(breakpoint3 + 1):length(files)]
 
 covid1 <- import_covid_subset(fileslist = files1, col_classes = col_classes1)
@@ -302,7 +302,6 @@ make_metro_plots(areaname = state,
                  jhudata = covid3,
                  nytdata = nyt,
                  lookback_days = lookback_days)
-
 
 
 # lapply(X = seq(2000,14000,2000), FUN = function(x){dfw_covid$posixdate[which(dfw_covid$Confirmed > x)][1]})
@@ -486,20 +485,23 @@ dev.off()
 # covid3 -- 'Confirmed' and 'Deaths', clocked by 'date' -- converted 
 # ecdcdata -- "cases" and "deaths", clocked by 'dateRep' or 'day', 'month', 'year'
 
-cname <- 'Afghanistan'
-cabbr <- 'AFG'
+isocodes <- get_iso_country_codes()
 
-country_plot(
-  countryname = cname,
-  iso3abbr = cabbr,
-  jhudata = covid3,
-  ecdcdata = ecdcdata,
-  lookback_days = lookback_days,
-  sourcename = ecdclabel
-)
+countries <- c('AFG', 'USA', 'CHL')
+#cabbr <- 'AFG'
 
-cname <- 'Chile'
-cabbr <- 'CHL'
+for(i in seq(1,length(countries))) {
+  cabbr = countries[i]
+  country_plot(
+    countryname = cleaned_isocodes$officialname[which(cleaned_isocodes$alpha3 == cabbr)],
+    iso3abbr = cabbr,
+    jhudata = covid3,
+    ecdcdata = ecdcdata,
+    lookback_days = lookback_days,
+    sourcename = ecdclabel
+  )
+}
+
 
 
 

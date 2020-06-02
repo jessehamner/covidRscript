@@ -91,7 +91,7 @@ nyt_subset <- function(nytdata, stfips, countysubset){
 }
 
 plot_daily_increase <- function(state, dataset, 
-                                lookback_days = 10,
+                                lookback_days = 14,
                                 sourcename = "Source: Johns Hopkins Univ. Center for Systems Science and Engineering") {
   message(sprintf('Writing daily case increase graphic for %s', state))
   basic_plot(sprintf('%s_covid19_confirmed_daily_increase.png', gsub(' ', '_', state)),
@@ -267,7 +267,7 @@ basic_plot <- function(filename, plotobj, destination = Sys.getenv('HOME')) {
 }
 
 
-longest_improvement <- function(metro_covid, min_days = 10) {
+longest_improvement <- function(metro_covid, min_days = 14) {
   alldates <- seq(range(metro_covid$posixdate)[1], range(metro_covid$posixdate)[2], 1)
   nrecords <- nrow(metro_covid)
   best_day <- metro_covid$posixdate[1]
@@ -292,7 +292,7 @@ longest_improvement <- function(metro_covid, min_days = 10) {
 
 daily_increase_plot <- function(metro_covid,
                                 metro_label,
-                                lookback_days = 10, 
+                                lookback_days = 14, 
                                 sourcename="Source: Johns Hopkins Univ. Center for Systems Science and Engineering"){
   ymax_today <- max(metro_covid$new_today) * 1.2
   plot(metro_covid$posixdate, 
@@ -659,7 +659,9 @@ make_metro_map_generic <- function(countiesmap, msa_name, msalist, covid_data) {
                                                                            FUN = function(x) {
                                                                              which(uspopbycounty$stfips == metrocountymap$STATEFP[x] & uspopbycounty$cofips == metrocountymap$COUNTYFP[x])
                                                                            }
-  ))]
+                                                                          )
+                                                                   )
+                                                            ]
   
   metrocountymap$percent_infected <- 0
   metrocountymap$percent_infected <- 100 * (metrocountymap$Confirmed / metrocountymap$Population)
@@ -729,6 +731,17 @@ make_complete_metro_plot <- function(msalist,
   ggsave(todaymapfilename, plot=metro_plot)
   
   return(TRUE)
+}
+
+
+get_iso_country_codes <- function() {
+  iso_codes_url <- "https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes"
+  isocodes <- isopage %>% html_nodes("table") %>% .[[1]] %>% html_table(fill = TRUE)
+  isonames <- c('countryname', 'officialname', 'sovereignty', 'alpha2', 'alpha3', 'numeric', 'subdiv', 'internet_tld')
+  names(isocodes) <- isonames
+  cleaned_isocodes <- isocodes[!grepl(' – See ', isocodes$countryname, ignore.case = TRUE, perl = TRUE),]
+  cleaned_isocodes <- cleaned_isocodes[!grepl('Country name', isocodes$countryname, ignore.case = TRUE, perl = TRUE),]
+  return(cleaned_isocodes)
 }
 
 # EOF
