@@ -189,7 +189,7 @@ system('git pull')
 setwd(datadir)
 files <- dir(pattern = "\\d{2}-\\d{2}-\\d{4}\\.csv")
 
-# the file format changed on 03.01.2020 and 03.22.2020:
+# the file format changed on 03.01.2020 and 03.22.2020, and again on 05.27.2020:
 breakpoint1 <- which(files == "02-29-2020.csv")
 breakpoint2 <- which(files == "03-21-2020.csv")
 breakpoint3 <- which(files == "05-28-2020.csv")
@@ -224,9 +224,6 @@ covid3$cofips <- substr(covid3$newfips, 3,5)
 covid3 <- rbind(covid3, covid4)
 
 
-
-
-
 ################################################################################
 # New York Times US county-level data:
 ################################################################################
@@ -248,6 +245,7 @@ nyt <- read.csv('us-counties.csv',
                 colClasses = nyt_col_classes
 )
 nyt$posixdate <- as.Date(nyt$date, format = "%Y-%m-%d")
+
 
 ################################################################################
 # EU / ECDC data:
@@ -337,44 +335,47 @@ msa_plot_list <- c('New Orleans-Metairie, LA',
 
 setwd(paste(homedir, mapdir, sep='/'))
 
-#msaname <- 'New York-Newark-Jersey City, NY-NJ-PA'
-#metro_fips <- get_metro_fips_2(msalist, msa_name = msaname, varname = 'CBSATitle')
+msaname <- 'New York-Newark-Jersey City, NY-NJ-PA'
+metro_fips <- get_metro_fips_2(msalist, msa_name = msaname, varname = 'CBSATitle')
+metro_fips$newfips <- sprintf('%s%s', metro_fips$stfips, metro_fips$cofips)
 
-#cleanerfips <- unique(metro_covid3$FIPS)
-#lapply(X=cleanerfips, FUN=function(x){c(metro_covid3$stfips[which(metro_covid3$FIPS == x)][1], metro_covid3$cofips[which(metro_covid3$FIPS == x)][1]) })
+metrocountymap <- make_metro_map(countiesmap = uscountiesmap,
+                                 msa_name = msaname,
+                                 msalist = msalist
+)
 
-#metrocountymap <- make_metro_map(countiesmap = uscountiesmap,
-#                                 msa_name = msaname,
-#                                 msalist = msalist
-#)
-#metro_covid3 <- covid3[unlist(lapply(X = seq(1, nrow(metro_fips)),
-#                                         FUN = function(x) { which(covid3$stfips == metro_fips$stfips[x] & 
-#                                                                     covid3$cofips == metro_fips$cofips[x]
-#                                         )
-#                                         }
-#)
-#),]
+metro_covid3 <- covid3[unlist(lapply(X = seq(1, nrow(metro_fips)),
+                                     FUN = function(x) { which(covid3$newfips == metro_fips$newfips[x]) }
+                                    )
+                             )
+                      ,]
+metro_covid3$posixtime <- strptime(x = metro_covid3$Last_Update, format="%Y-%m-%d %H:%M:%S", tz="GMT")
+metro_covid3[which(is.na(metro_covid3$posixtime)),]$posixtime <- strptime(x = metro_covid3[which(is.na(metro_covid3$posixtime)),]$Last_Update, 
+                                                                          tz="GMT",
+                                                                          format="%D %R")
+metro_covid3[which(is.na(metro_covid3$posixtime)),]$posixtime <- strptime(x = metro_covid3[which(is.na(metro_covid3$posixtime)),]$Last_Update,
+                                                                          tz="GMT",
+                                                                          format="%m/%e/%y %R")
+covid3_metro_yesterday <- metro_covid3[which(metro_covid3$posixtime == max(metro_covid3$posixtime)),]
 
 
-
-covid3_metro_yesterday <- metro_covid3[which(metro_covid3$date == Sys.Date() - 1),]
 metrocountymap$Confirmed <- 0
-metrocountymap$Confirmed <- covid3_metro_yesterday$Confirmed[unlist(lapply(X = seq(1,nrow(metrocountymap)),
-                                                                           FUN = function(x) {
-                                                                             which(covid3_metro_yesterday$cofips == metrocountymap$COUNTYFP[x] & 
-                                                                                     covid3_metro_yesterday$stfips == metrocountymap$STATEFP[x]
-                                                                             )
-                                                                           }
-                                                                          )
-                                                                   )
-                                                            ]
+which_observations <- unlist(lapply(X = seq(1,nrow(metrocountymap)),
+                                    FUN = function(x) { which(metrocountymap$GEOID[x] == covid3_metro_yesterday$newfips) }
+                                    )
+                             )
+metrocountymap$Confirmed[which_observations] <- covid3_metro_yesterday$Confirmed
+metrocountymap$percent_infected <- 100 * (metrocountymap$Confirmed / metrocountymap$Population)
 
-
-todaytitle <- sprintf("%s COVID-19 Cases as of %s", msa_name, Sys.Date())
+todaytitle <- sprintf("%s COVID-19 Cases as of %s", msaname, Sys.Date())
 todaysubtitle <- sprintf("and Percent of County Population Infected")
-metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle)
-todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", gsub(' ', '', gsub('-|,', '', msa_name)), Sys.Date())
-ggsave(todaymapfilename, plot=metro_plot)
+
+# FIXME -- "object 'percent_infected' not found" (need population data in the metrocountymap data frame)
+
+# metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle)
+
+# todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", gsub(' ', '', gsub('-|,', '', msaname)), Sys.Date())
+# ggsave(todaymapfilename, plot=metro_plot)
 
 # Graphs of infections, deaths, and rates:
 make_complete_metro_plot(msalist = msalist,
@@ -391,10 +392,7 @@ for(i in seq(1:length(msa_plot_list))) {
                            uscountiesmap = uscountiesmap,
                            covid_data = covid3,
                            dest_dir = homedir)
-  
 }
-
-
 
 
 txcountymap <- uscountiesmap[which(uscountiesmap$STATEFP == '48'),]
@@ -480,6 +478,17 @@ png(filename = mapname,
    )
   dfw_plot
 dev.off()
+
+
+# Make a county-level plot by state, using, say, txcountymap:
+state_map <- uscountiesmap[which(uscountiesmap$STATEFP == '48'),]
+covid3_state <- txcovid3[which(txcovid3$stfips == '48'),]
+covid3_state_counties <- unique(covid3_state$cofips)
+
+# sum cases over unique counties (no dates)
+# sum new cases *today* over unique counties (only today's date)
+# 
+
 
 
 # covid3 -- 'Confirmed' and 'Deaths', clocked by 'date' -- converted 
