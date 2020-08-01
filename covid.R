@@ -21,6 +21,7 @@ library(rvest)
 library(colorspace)
 
 homedir <- Sys.getenv('HOME')
+outputdir <- sprintf('%s/%s', homedir, 'covid')
 setwd(homedir)
 setwd('Dropbox/covidRscript')
 # Load helper functions for this work:
@@ -96,6 +97,10 @@ fipsurl <- 'https://www2.census.gov/geo/docs/reference/state.txt?#'
 statefipscodes <- import_fips_codes(pageurl = fipsurl, 
                                     fipscolclasses = fipscolclasses
                                    )
+
+dropstates <- c(60, 66, 69, 74, 78)
+`%notin%` <- Negate(`%in%`)
+statefipscodes <- statefipscodes[which(statefipscodes$STATE %notin% dropstates),]
 
 ################################################################################
 # Johns Hopkins's data have changed format a few times.
@@ -266,7 +271,7 @@ ecdclabel <- "Source: European Centre for Disease Prevention and Control"
 #
 ################################################################################
 
-setwd(homedir)
+setwd(outputdir)
 lapply(X = statefipscodes[,1],
        FUN = do_state_plots,
        inputjhu = covid3,
@@ -275,27 +280,53 @@ lapply(X = statefipscodes[,1],
 
 
 # An example of doing one state manually instead of with -lapply-
-state <- 'Texas'
-stfips <- '48'
-state_level <- make_state_data(inputdf = covid3, stfips = stfips)
-nyt_state_level <- nyt_state_match(nyt = nyt, stfips = stfips)
-plot_daily_increase(state = state,
-                    dataset = state_level,
-                    lookback_days = lookback_days)
-plot_cumulative_cases(state = state,
-                      jhu_data = state_level,
-                      nyt_data = nyt_state_level)
+# state <- 'Texas'
+# stfips <- '48'
+# state_level <- make_state_data(inputdf = covid3, stfips = stfips)
+# nyt_state_level <- nyt_state_match(nyt = nyt, stfips = stfips)
+# plot_daily_increase(state = state,
+#                    dataset = state_level,
+#                    lookback_days = lookback_days)
+# plot_cumulative_cases(state = state,
+#                      jhu_data = state_level,
+#                      nyt_data = nyt_state_level)
 
 
 ################################################################################
-# Metro plots for DFW (aggregated)
+# Metro plots for MSAs (aggregated)
 ################################################################################
 
-setwd(homedir)
+msa_plot_list <- c('New Orleans-Metairie, LA',
+                   'Minneapolis-St. Paul-Bloomington, MN-WI',
+                   'Chicago-Naperville-Elgin, IL-IN-WI',
+                   'Huntsville, AL',
+                   'Atlanta-Sandy Springs-Alpharetta, GA',
+                   'Dallas-Fort Worth-Arlington, TX',
+                   'San Antonio-New Braunfels, TX',
+                   'Houston-The Woodlands-Sugar Land, TX',
+                   'Austin-Round Rock-Georgetown, TX',
+                   'Sulphur Springs, TX')
+
+setwd(outputdir)
+texas_metros <- c()
 state <- 'DFW Metro'
+
 
 make_metro_plots(areaname = state,
                  countysubset = dfw_fips,
+                 stfips = '48',
+                 jhudata = covid3,
+                 nytdata = nyt,
+                 lookback_days = lookback_days)
+
+
+# How to make a single-county plot:
+state <- 'Hopkins County'
+hopkinsfips <- msalist[which(msalist$CBSATitle=='Sulphur Springs, TX'),]
+hopkinsfips$cofips <- 223
+
+make_metro_plots(areaname = state,
+                 countysubset = hopkinsfips,
                  stfips = '48',
                  jhudata = covid3,
                  nytdata = nyt,
@@ -324,25 +355,29 @@ setwd(uscountymapdir)
 
 uspopdataurl <- 'https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/counties/totals/co-est2019-alldata.csv'
 uscountiesmap <- st_read(uscountymap, stringsAsFactors = FALSE)
+uspopdata <- read.csv(uspopdataurl)
+currentpop <- 'POPESTIMATE2019'
+uspopdata$GEOID <- sprintf('%02g%03g', uspopdata$STATE, uspopdata$COUNTY)
 
-msa_plot_list <- c('New Orleans-Metairie, LA',
-                   'Minneapolis-St. Paul-Bloomington, MN-WI',
-                   'Chicago-Naperville-Elgin, IL-IN-WI',
-                   'Huntsville, AL',
-                   'Atlanta-Sandy Springs-Alpharetta, GA'         
-                   )
+uscountiesmap$Population <- 0
+for (i in seq(1, nrow(uscountiesmap))) {
+  matcher <- which(uspopdata$GEOID == uscountiesmap$GEOID[i])
+  if (length(matcher) != 0) {
+    uscountiesmap$Population[i] <- uspopdata$POPESTIMATE2019[matcher]
+  }
+}
 
 
+
+#metro_fips$newfips <- sprintf('%s%s', metro_fips$stfips, metro_fips$cofips)
 setwd(paste(homedir, mapdir, sep='/'))
 
 msaname <- 'New York-Newark-Jersey City, NY-NJ-PA'
 metro_fips <- get_metro_fips_2(msalist, msa_name = msaname, varname = 'CBSATitle')
-metro_fips$newfips <- sprintf('%s%s', metro_fips$stfips, metro_fips$cofips)
-
 metrocountymap <- make_metro_map(countiesmap = uscountiesmap,
                                  msa_name = msaname,
                                  msalist = msalist
-)
+                                )
 
 metro_covid3 <- covid3[unlist(lapply(X = seq(1, nrow(metro_fips)),
                                      FUN = function(x) { which(covid3$newfips == metro_fips$newfips[x]) }
@@ -356,42 +391,43 @@ metro_covid3[which(is.na(metro_covid3$posixtime)),]$posixtime <- strptime(x = me
 metro_covid3[which(is.na(metro_covid3$posixtime)),]$posixtime <- strptime(x = metro_covid3[which(is.na(metro_covid3$posixtime)),]$Last_Update,
                                                                           tz="GMT",
                                                                           format="%m/%e/%y %R")
-covid3_metro_yesterday <- metro_covid3[which(metro_covid3$posixtime == max(metro_covid3$posixtime)),]
 
-
+covid3_metro_yesterday <- metro_covid3[which(metro_covid3$date == as.Date(max(metro_covid3$posixtime)) - 1),]
 metrocountymap$Confirmed <- 0
-which_observations <- unlist(lapply(X = seq(1,nrow(metrocountymap)),
-                                    FUN = function(x) { which(metrocountymap$GEOID[x] == covid3_metro_yesterday$newfips) }
-                                    )
-                             )
-metrocountymap$Confirmed[which_observations] <- covid3_metro_yesterday$Confirmed
+
+for (x in seq(1, nrow(covid3_metro_yesterday))) {
+    replacement <- covid3_metro_yesterday$Confirmed[which(covid3_metro_yesterday$newfips == metrocountymap$GEOID[x])]
+    message(sprintf('X: %s\t FIPS: %s\treplacement value: %s', x, covid3_metro_yesterday$newfips[x], replacement))
+    if (length(replacement) > 0) {
+      metrocountymap$Confirmed[x] <- replacement
+    }
+}
+
 metrocountymap$percent_infected <- 100 * (metrocountymap$Confirmed / metrocountymap$Population)
 
 todaytitle <- sprintf("%s COVID-19 Cases as of %s", msaname, Sys.Date())
 todaysubtitle <- sprintf("and Percent of County Population Infected")
 
-# FIXME -- "object 'percent_infected' not found" (need population data in the metrocountymap data frame)
+metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle)
 
-# metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle)
-
-# todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", gsub(' ', '', gsub('-|,', '', msaname)), Sys.Date())
-# ggsave(todaymapfilename, plot=metro_plot)
+todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", gsub(' ', '', gsub('-|,', '', msaname)), Sys.Date())
+setwd(outputdir)
+ggsave(todaymapfilename, plot=metro_plot)
 
 # Graphs of infections, deaths, and rates:
-make_complete_metro_plot(msalist = msalist,
-                         msa_name = msaname,
-                         uscountiesmap = uscountiesmap,
-                         covid_data = covid3,
-                         dest_dir = homedir
-                        )
-
+#make_complete_metro_plot(msalist = msalist,
+#                         msa_name = msaname,
+#                         uscountiesmap = uscountiesmap,
+#                         covid_data = covid3,
+#                         dest_dir = homedir
+#                        )
 
 for(i in seq(1:length(msa_plot_list))) {
   make_complete_metro_plot(msalist = msalist,
                            msa_name = msa_plot_list[i],
                            uscountiesmap = uscountiesmap,
                            covid_data = covid3,
-                           dest_dir = homedir)
+                           dest_dir = outputdir)
 }
 
 

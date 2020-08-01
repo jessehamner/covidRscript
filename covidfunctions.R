@@ -45,6 +45,7 @@ do_state_plots <- function(stfips,
   stname = stfipslist$STATE_NAME[which(stfipslist$STATE == stfips)]
   state_level <- make_state_data(inputdf = inputjhu, stfips = stfips)
   nyt_state_level <- nyt_state_match(nyt = inputnyt, stfips = stfips)
+  
   if (isFALSE(state_level)) {
     message('No usable data in JHU data subset.')
     return(FALSE)
@@ -137,8 +138,10 @@ nyt_state_match <- function(nyt, stfips, startdate = "2020-03-21"){
 make_metro_map <- function(countiesmap, msa_name, msalist, varname = 'CBSATitle') {
   
   msa_fips <- get_metro_fips_2(msalist, msa_name = msa_name, varname = varname)
+  
+  countiesmap$newfips <- sprintf('%s%s', countiesmap$STATEFP, countiesmap$COUNTYFP)
   returnmap <- countiesmap[unlist(lapply(X = seq(1, nrow(msa_fips)), 
-                                         FUN = function(x){ which(countiesmap$STATEFP == msa_fips$stfips[x] & countiesmap$COUNTYFP == msa_fips$cofips[x])}
+                                         FUN = function(x){ which(countiesmap$newfips == msa_fips$newfips[x])}
                                          )),]
   return(returnmap)
 }
@@ -273,11 +276,15 @@ longest_improvement <- function(metro_covid, min_days = 14) {
   best_day <- metro_covid$posixdate[1]
   best_slope <- lm(metro_covid$new_today ~ metro_covid$posixdate)$coef[2]
   
+  if (nrow(metro_covid) - min_days <= 1) {
+    return(FALSE)
+  }
+  
   for (i in seq(1, (nrow(metro_covid) - min_days))) {
     seqlength <- min_days
     moving_window <- i + seqlength
     testslope <- lm(metro_covid$new_today[i:moving_window] ~ metro_covid$posixdate[i:moving_window])$coef[2]
-    message(sprintf('%s) Duration: %s days; slope: %0.1f',i, seqlength, testslope))
+    # message(sprintf('%s) Duration: %s days; slope: %0.1f',i, seqlength, testslope))
     if (testslope < best_slope) {
       best_slope <- testslope
       best_day <- i
@@ -319,8 +326,14 @@ daily_increase_plot <- function(metro_covid,
         lwd = 3
   )
   
+  
+  
   best_params <- longest_improvement(metro_covid, lookback_days)
+  if (is.na(best_params[1]) || is.na(best_params[2])) {
+    return(FALSE)
+  }
   best_period <- metro_covid[best_params[1]:(best_params[1] + best_params[2]),]
+  
   best_daily_regression <- lm(best_period$new_today ~ best_period$posixdate)
   lines(best_period$posixdate,
         predict.lm(best_daily_regression),
@@ -521,6 +534,7 @@ get_metro_fips <- function(fipslist, msa_name){
 get_metro_fips_2 <- function(msafips, msa_name, varname = 'CBSATitle'){
   msa_subset <- msafips[which(msafips[[varname]] == msa_name),]
   retval <- subset(msa_subset, select=c('stfips', 'cofips'))
+  retval$newfips <- sprintf('%s%s', retval$stfips, retval$cofips)
   return(retval)
 }
 
@@ -560,20 +574,20 @@ make_metro_plots <- function(areaname,
                              stfips,
                              lookback_days) {
   
-  dfw_covid <- make_metro_subset(inputdf = jhudata, cofipslist = dfw_fips)
+  metro_covid <- make_metro_subset(inputdf = jhudata, cofipslist = countysubset)
   message('Metro subset dates:')
-  message(sprintf("%s,\n", dfw_covid$posixdate))
-  nyt_dfw <- nyt_subset(nytdata = nytdata,
-                        stfips = stfips,
-                        countysubset = as.numeric(dfw_fips$cofips)
+  message(sprintf("%s,\n", metro_covid$posixdate))
+  nyt_metro <- nyt_subset(nytdata = nytdata,
+                          stfips = stfips,
+                          countysubset = as.numeric(countysubset$cofips)
   )
   plot_daily_increase(state = areaname,
-                      dataset = dfw_covid,
+                      dataset = metro_covid,
                       lookback_days = lookback_days
   )
   plot_cumulative_cases(state = areaname,
-                        jhu_data = dfw_covid,
-                        nyt_data = nyt_dfw
+                        jhu_data = metro_covid,
+                        nyt_data = nyt_metro
   )
   
   return(TRUE)  
