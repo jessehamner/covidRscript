@@ -540,7 +540,7 @@ countries <- c('AFG', 'USA', 'CHL')
 for(i in seq(1,length(countries))) {
   cabbr = countries[i]
   country_plot(
-    countryname = cleaned_isocodes$officialname[which(cleaned_isocodes$alpha3 == cabbr)],
+    countryname = isocodes$officialname[which(isocodes$alpha3 == cabbr)],
     iso3abbr = cabbr,
     jhudata = covid3,
     ecdcdata = ecdcdata,

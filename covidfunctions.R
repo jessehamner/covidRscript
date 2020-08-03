@@ -751,6 +751,10 @@ make_complete_metro_plot <- function(msalist,
 
 get_iso_country_codes <- function() {
   iso_codes_url <- "https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes"
+  isop1 <- GET(url=iso_codes_url)
+  if(identical(status_code(isop1), 200L)){
+    isopage <- read_html(isop1)
+  }
   isocodes <- isopage %>% html_nodes("table") %>% .[[1]] %>% html_table(fill = TRUE)
   isonames <- c('countryname', 'officialname', 'sovereignty', 'alpha2', 'alpha3', 'numeric', 'subdiv', 'internet_tld')
   names(isocodes) <- isonames
