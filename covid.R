@@ -440,20 +440,22 @@ covid3_dfw <- txcovid3[which(txcovid3$cofips %in% dfw_fips$cofips),]
 covid3_dfw_yesterday <- covid3_dfw[which(covid3_dfw$date == Sys.Date() - 1),]
 
 dfw_counties_map$Confirmed <- 0
-dfw_counties_map$Confirmed <- as.numeric(lapply(X = dfw_counties_map$COUNTYFP, 
+dfw_counties_map$Confirmed <- as.numeric(lapply(X = dfw_counties_map$GEOID, 
        FUN = function(x) {
-         as.numeric(covid3_dfw_yesterday$Confirmed[which(covid3_dfw_yesterday$cofips == x)])
+         as.numeric(covid3_dfw_yesterday$Confirmed[which(covid3_dfw_yesterday$FIPS == x)])
         }
       ))
 
 dfw_counties_map$Confirmed[which(is.na(dfw_counties_map$Confirmed))] <- 0
 
 # poplist uses NUMERIC FIPS codes for counties. The rest of the data frames should not.
-poplist <- get_texas_population_by_county(2019)
+poplist <- get_us_population_by_county(2019)
+
+
 dfw_counties_map$Population <- 0
-dfw_counties_map$Population <- as.numeric(lapply(X = as.numeric(dfw_counties_map$COUNTYFP), 
+dfw_counties_map$Population <- as.numeric(lapply(X = as.numeric(dfw_counties_map$GEOID), 
                                                  FUN = function(x) {
-                                                                    gsub(',', '', poplist$Total[which(poplist$FIPS == x)])
+                                                                    gsub(',', '', poplist$POPESTIMATE2019[which(poplist$newfips == x)])
                                                                    }
                                                 )
                                          )

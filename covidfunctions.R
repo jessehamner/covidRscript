@@ -227,6 +227,7 @@ get_us_population_by_county <- function(year = 2019) {
   uspopbycounty <- read.csv(file=urlpath, header=TRUE)
   uspopbycounty$stfips <- sprintf("%02.0f", uspopbycounty$STATE)
   uspopbycounty$cofips <- sprintf("%03.0f", uspopbycounty$COUNTY)
+  uspopbycounty$newfips <- sprintf("%02.0f%03.0f", uspopbycounty$STATE, uspopbycounty$COUNTY)
   return(uspopbycounty)
 }
 
