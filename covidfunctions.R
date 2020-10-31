@@ -189,6 +189,40 @@ make_metro_subset <- function(inputdf, cofipslist) {
 }
 
 
+
+make_state_subset <- function(inputdf, state_map) {
+  cofipslist <- unique(inputdf$cofips)
+  
+  # Check county fips or combined FIPS variable for each row in cofipslist
+  covid_rows <- unlist(lapply(X = seq(1,length(cofipslist)),
+                              FUN = function(x) { which(as.numeric(inputdf[["cofips"]]) == as.numeric(state_map$COUNTYFP[x]))}
+                             )
+                      )
+  
+  metro_covid_base <- inputdf[covid_rows,]
+  metro_covid_base$posixdate <- as.Date(metro_covid_base$date, format = "%Y-%m-%d")
+  metro_covid <- aggregate(x = metro_covid_base$Confirmed,
+                           FUN = sum,
+                           by = list(metro_covid_base$posixdate, metro_covid_base$cofips)
+                          )
+  names(metro_covid) <- c('posixdate', 'cofips', 'Confirmed')
+  
+  metro_covid$new_today <- ave(metro_covid$Confirmed, metro_covid$cofips,
+                               FUN = function(x) c(0, diff(x)))
+  
+  metro_covid$total_dead <- aggregate(x = metro_covid_base$Deaths,
+                                      FUN = sum,
+                                      by = list(metro_covid_base$posixdate, metro_covid_base$cofips))$x
+
+  metro_covid$active_cases <- metro_covid$Confirmed - metro_covid$total_dead
+  
+  # Now we have county-level data for each day. Can push it into the map.
+  
+  
+  return(metro_covid)
+}
+
+
 make_state_data <- function(inputdf, stfips = '48') {
   st_covid_base <- inputdf[which(inputdf$stfips == stfips),]
   
@@ -303,13 +337,17 @@ daily_increase_plot <- function(metro_covid,
                                 lookback_days = 14, 
                                 sourcename="Source: Johns Hopkins Univ. Center for Systems Science and Engineering"){
   ymax_today <- max(metro_covid$new_today) * 1.2
+  #format(metro_covid$new_today,scientific=FALSE)
+  options(scipen=5)
   plot(metro_covid$posixdate, 
        metro_covid$new_today, 
        type = "l",
-       main = sprintf('%s Daily New Confirmed Cases of COVID-19', metro_label),
+       main = sprintf('%s\nDaily New Confirmed Cases of COVID-19', metro_label),
        xlab = "",
        ylab = "New Cases Each Day",
-       ylim = c(0, ymax_today)
+       ylim = c(0, ymax_today),
+       axis.cex = 0.7,
+       lab.cex = 0.7
   )
   
   daily_regression <- lm(metro_covid$new_today ~ metro_covid$posixdate)
@@ -702,9 +740,11 @@ metro_map_plot <- function(metrocountymap, todaytitle, todaysubtitle) {
     coord_sf(label_axes = list(bottom = "Longitude",
                                left = "Latitude")
     ) + 
-    geom_sf_label(aes(label = metrocountymap$Confirmed,
-                      geometry = metrocountymap$geometry
-    )
+    geom_sf_label(data = metrocountymap,
+                  na.rm = TRUE,
+                  mapping = aes(label = Confirmed,
+                                geometry = geometry
+                               )
     ) +
     guides(fill = guide_colorbar(title="Percent\nInfected")) + 
     theme(legend.justification=c(0.0, 0.0),

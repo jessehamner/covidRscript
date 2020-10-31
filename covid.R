@@ -19,6 +19,8 @@ library(ggplot2)
 library(xml2)
 library(rvest)
 library(colorspace)
+library(zoo)
+library(readxl)
 
 homedir <- Sys.getenv('HOME')
 outputdir <- sprintf('%s/%s', homedir, 'covid')
@@ -41,7 +43,9 @@ lookback_days <- 14
 
 # FIPS list of nationwide MSAs:
 msa_list_url <- 'https://www.census.gov/geographies/reference-files/time-series/demo/metro-micro/delineation-files.html'
-msa_list_filename <- 'https://www2.census.gov/programs-surveys/metro-micro/geographies/reference-files/2020/delineation-files/list1_2020.xls'
+censusgov <- 'https://www2.census.gov/programs-surveys'
+msa_list_filename <- sprintf('%s/metro-micro/geographies/reference-files/2020/delineation-files/list1_2020.xls', censusgov)
+uspopdataurl <- sprintf('%s/popest/datasets/2010-2019/counties/totals/co-est2019-alldata.csv', censusgov)
 msafips_columns <- c('CBSACode', 'MetropolitanDivisionCode', 'CSACode',
                      'CBSATitle', 'MSAName', 'MetropolitanDivisionTitle',
                      'CSATitle', 'County_or_Equivalent', 'StateName',
@@ -305,7 +309,8 @@ msa_plot_list <- c('New Orleans-Metairie, LA',
                    'San Antonio-New Braunfels, TX',
                    'Houston-The Woodlands-Sugar Land, TX',
                    'Austin-Round Rock-Georgetown, TX',
-                   'Sulphur Springs, TX')
+                   'Sulphur Springs, TX',
+                   'San Diego-Chula Vista-Carlsbad, CA')
 
 setwd(outputdir)
 texas_metros <- c()
@@ -353,7 +358,7 @@ uscountymap <- 'cb_2015_us_county_5m.shp'
 setwd(paste(homedir, mapdir, sep='/'))
 setwd(uscountymapdir)
 
-uspopdataurl <- 'https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/counties/totals/co-est2019-alldata.csv'
+
 uscountiesmap <- st_read(uscountymap, stringsAsFactors = FALSE)
 uspopdata <- read.csv(uspopdataurl)
 currentpop <- 'POPESTIMATE2019'
@@ -462,7 +467,6 @@ dfw_counties_map$Population <- as.numeric(lapply(X = as.numeric(dfw_counties_map
 
 dfw_counties_map$percent_infected <- 100 * (dfw_counties_map$Confirmed / dfw_counties_map$Population)
 
-
 todaytitle <- sprintf("%s COVID-19 Cases as of %s", metro_msa_name, Sys.Date())
 todaysubtitle <- sprintf("and Percent of County Population Infected")
 
@@ -482,8 +486,9 @@ dfw_plot <- ggplot() +
   coord_sf(label_axes = list(bottom = "Longitude",
                              left = "Latitude")
           ) + 
-  geom_sf_label(aes(label = dfw_counties_map$Confirmed,
-                geometry = dfw_counties_map$geometry
+  geom_sf_label(data = dfw_counties_map,
+                aes(label = Confirmed,
+                    geometry = geometry
                    )
                ) +
   guides(fill = guide_colorbar(title="Percent\nInfected")) + 
@@ -519,9 +524,13 @@ dev.off()
 
 
 # Make a county-level plot by state, using, say, txcountymap:
-state_map <- uscountiesmap[which(uscountiesmap$STATEFP == '48'),]
-covid3_state <- txcovid3[which(txcovid3$stfips == '48'),]
+state_code <- '48'
+state_map <- uscountiesmap[which(uscountiesmap$STATEFP == state_code),]
+covid3_state <- txcovid3[which(txcovid3$stfips == state_code),]
 covid3_state_counties <- unique(covid3_state$cofips)
+state_map$POPESTIMATE2019 <- 0
+state_map$POPESTIMATE2019 <- unlist(lapply(X=state_map$GEOID, FUN = function(x){poplist$POPESTIMATE2019[which(poplist$newfips == x)]}))
+
 
 # sum cases over unique counties (no dates)
 # sum new cases *today* over unique counties (only today's date)
@@ -534,7 +543,7 @@ covid3_state_counties <- unique(covid3_state$cofips)
 
 isocodes <- get_iso_country_codes()
 
-countries <- c('AFG', 'USA', 'CHL')
+countries <- c('USA', 'DEU', 'FRA')
 #cabbr <- 'AFG'
 
 for(i in seq(1,length(countries))) {
@@ -549,8 +558,12 @@ for(i in seq(1,length(countries))) {
   )
 }
 
-
-
+# Export data for one county:
+california <- covid3[which(covid3$Country_Region == "US" & covid3$Province_State == "California"),]
+sandiego <- california[which(california$Admin2 == "San Diego"),]
+sandiego$newcases <- 0
+sandiego$newcases[2:nrow(sandiego)] <- unlist(sapply(X=seq(1,nrow(sandiego)), FUN = function(x) {sandiego$Confirmed[x] - sandiego$Confirmed[x-1]}))
+write.csv(x=sandiego, file="san_diego_california_usa.csv", quote = TRUE, row.names = FALSE, eol="\n")
 
 
 
