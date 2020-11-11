@@ -84,7 +84,7 @@ dfw_fips <- get_metro_fips(txfips, metro_msa_name)
 if (length(dfw_fips) == 0) {
   message('Oops -- unable to convert the Texas Metro area FIPS file.')
   converted_fips_file_name <- 'PHR_MSA_County_masterlist.csv'
-  dfw_fips <- get_metro_fips_locally(fipsdir = paste(Sys.getenv('HOME'), 'Dropbox', sep = '/'), 
+  dfw_fips <- get_metro_fips_locally(fipsdir = paste(homedir, 'Dropbox', sep = '/'), 
                                      msa_name = metro_msa_name,
                                      fipsfilename = converted_fips_file_name
                                     ) 
@@ -109,6 +109,12 @@ statefipscodes <- statefipscodes[which(statefipscodes$STATE %notin% dropstates),
 ################################################################################
 # Johns Hopkins's data have changed format a few times.
 ################################################################################
+
+# After 11/08/2020:
+header5 <- c('FIPS', 'Admin2', 'Province_State', 'Country_Region', 'Last_Update',
+             'Lat', 'Long_', 'Confirmed', 'Deaths', 'Recovered', 'Active',
+             'Combined_Key', 'Incidence_Rate', 'Case_Fatality_Ratio'
+)
 
 # After 5/29/2020:
 header4 <- c('FIPS', 'Admin2', 'Province_State', 'Country_Region', 'Last_Update',
@@ -181,6 +187,21 @@ col_classes4 <- c('FIPS' = 'character',
                   'Case.Fatality_Ratio' = 'numeric')
 
 
+col_classes5 <- c('FIPS' = 'character',
+                  'Admin2' = 'character',
+                  'Province_State' = 'factor',
+                  'Country_Region' = 'character',
+                  'Last_Update' = 'character',
+                  'Lat' = 'double',
+                  'Long_' = 'double',
+                  'Confirmed' = 'numeric',
+                  'Deaths' = 'numeric',
+                  'Recovered' = 'numeric',
+                  'Active' = 'numeric',
+                  'Combined_Key' = 'character',
+                  'Incidence_Rate' = 'numeric',
+                  'Case_Fatality_Ratio' = 'numeric')
+
 
 
 ################################################################################
@@ -202,20 +223,29 @@ files <- dir(pattern = "\\d{2}-\\d{2}-\\d{4}\\.csv")
 breakpoint1 <- which(files == "02-29-2020.csv")
 breakpoint2 <- which(files == "03-21-2020.csv")
 breakpoint3 <- which(files == "05-28-2020.csv")
+breakpoint4 <- which(files == "11-09-2020.csv")
 
 files1 <- files[1:breakpoint1]
 files2 <- files[(breakpoint1 + 1):breakpoint2]
 files3 <- files[(breakpoint2 + 1):breakpoint3]
-files4 <- files[(breakpoint3 + 1):length(files)]
+files4 <- files[(breakpoint3 + 1):breakpoint4]
+files5 <- files[(breakpoint4 + 1):length(files)]
 
 covid1 <- import_covid_subset(fileslist = files1, col_classes = col_classes1)
 covid2 <- import_covid_subset(fileslist = files2, col_classes = col_classes2)
 covid3 <- import_covid_subset(fileslist = files3, col_classes = col_classes3)
 covid4 <- import_covid_subset(fileslist = files4, col_classes = col_classes4)
+covid5 <- import_covid_subset(fileslist = files5, col_classes = col_classes5)
 
 covid4$newfips <- sprintf("%05.0f", as.integer(covid4$FIPS))
 covid4$stfips <- substr(covid4$newfips, 1,2)
 covid4$cofips <- substr(covid4$newfips, 3,5)
+
+names(covid5) <- names(covid4)
+covid5$newfips <- sprintf("%05.0f", as.integer(covid5$FIPS))
+covid5$stfips <- substr(covid5$newfips, 1,2)
+covid5$cofips <- substr(covid5$newfips, 3,5)
+
 
 # Set up the first two formats for a merge:
 covid1$Longitude <- as.double(0.0)
@@ -230,7 +260,7 @@ covid3$newfips <- sprintf("%05.0f", as.integer(covid3$FIPS))
 covid3$stfips <- substr(covid3$newfips, 1,2)
 covid3$cofips <- substr(covid3$newfips, 3,5)
 
-covid3 <- rbind(covid3, covid4)
+covid3 <- rbind(covid3, covid4, covid5)
 
 
 ################################################################################
@@ -337,8 +367,6 @@ make_metro_plots(areaname = state,
                  nytdata = nyt,
                  lookback_days = lookback_days)
 
-
-# lapply(X = seq(2000,14000,2000), FUN = function(x){dfw_covid$posixdate[which(dfw_covid$Confirmed > x)][1]})
 
 ################################################################################
 # TODO:
@@ -529,7 +557,8 @@ state_map <- uscountiesmap[which(uscountiesmap$STATEFP == state_code),]
 covid3_state <- txcovid3[which(txcovid3$stfips == state_code),]
 covid3_state_counties <- unique(covid3_state$cofips)
 state_map$POPESTIMATE2019 <- 0
-state_map$POPESTIMATE2019 <- unlist(lapply(X=state_map$GEOID, FUN = function(x){poplist$POPESTIMATE2019[which(poplist$newfips == x)]}))
+state_map$POPESTIMATE2019 <- unlist(lapply(X=state_map$GEOID,
+                                           FUN = function(x){poplist$POPESTIMATE2019[which(poplist$newfips == x)]}))
 
 
 # sum cases over unique counties (no dates)
@@ -562,8 +591,14 @@ for(i in seq(1,length(countries))) {
 california <- covid3[which(covid3$Country_Region == "US" & covid3$Province_State == "California"),]
 sandiego <- california[which(california$Admin2 == "San Diego"),]
 sandiego$newcases <- 0
-sandiego$newcases[2:nrow(sandiego)] <- unlist(sapply(X=seq(1,nrow(sandiego)), FUN = function(x) {sandiego$Confirmed[x] - sandiego$Confirmed[x-1]}))
-write.csv(x=sandiego, file="san_diego_california_usa.csv", quote = TRUE, row.names = FALSE, eol="\n")
+sandiego$newcases[2:nrow(sandiego)] <- unlist(sapply(X=seq(1,nrow(sandiego)), 
+                                                     FUN = function(x) {sandiego$Confirmed[x] - sandiego$Confirmed[x-1]}))
+write.csv(x=sandiego,
+          file="san_diego_california_usa.csv", 
+          quote = TRUE,
+          row.names = FALSE, 
+          eol="\n"
+         )
 
 
 
