@@ -199,7 +199,7 @@ col_classes5 <- c('FIPS' = 'character',
                   'Recovered' = 'numeric',
                   'Active' = 'numeric',
                   'Combined_Key' = 'character',
-                  'Incidence_Rate' = 'numeric',
+                  'Incident_Rate' = 'numeric',
                   'Case_Fatality_Ratio' = 'numeric')
 
 
@@ -223,7 +223,7 @@ files <- dir(pattern = "\\d{2}-\\d{2}-\\d{4}\\.csv")
 breakpoint1 <- which(files == "02-29-2020.csv")
 breakpoint2 <- which(files == "03-21-2020.csv")
 breakpoint3 <- which(files == "05-28-2020.csv")
-breakpoint4 <- which(files == "11-09-2020.csv")
+breakpoint4 <- which(files == "11-08-2020.csv")
 
 files1 <- files[1:breakpoint1]
 files2 <- files[(breakpoint1 + 1):breakpoint2]
@@ -241,7 +241,6 @@ covid4$newfips <- sprintf("%05.0f", as.integer(covid4$FIPS))
 covid4$stfips <- substr(covid4$newfips, 1,2)
 covid4$cofips <- substr(covid4$newfips, 3,5)
 
-names(covid5) <- names(covid4)
 covid5$newfips <- sprintf("%05.0f", as.integer(covid5$FIPS))
 covid5$stfips <- substr(covid5$newfips, 1,2)
 covid5$cofips <- substr(covid5$newfips, 3,5)
@@ -260,6 +259,7 @@ covid3$newfips <- sprintf("%05.0f", as.integer(covid3$FIPS))
 covid3$stfips <- substr(covid3$newfips, 1,2)
 covid3$cofips <- substr(covid3$newfips, 3,5)
 
+names(covid5) <- names(covid4)
 covid3 <- rbind(covid3, covid4, covid5)
 
 
