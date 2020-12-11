@@ -7,19 +7,33 @@
 ################################################################################
 
 library(httr)
+library(curl)
 
 
-import_fips_codes <- function(pageurl, fipscolclasses){
-  if(identical(status_code(GET(pageurl)), 200L)){
-    statefipscodes <- read.delim(url(pageurl), 
-                                 header=TRUE, 
-                                 sep = '|', 
-                                 colClasses = fipscolclasses
-    )
+import_fips_codes <- function(pageurl,
+                              fipscolclasses,
+                              filename = "statefipscodes.txt"){
+  
+  if (file.exists(filename) == TRUE) {
+    message(sprintf("File %s exists locally.", filename))
+    fipsurl = filename
   } else {
-    stop()
+    message(sprintf("File %s does not exist locally; will retrieve from URL.", filename))
+    curl_download(url = pageurl, destfile = filename, quiet = TRUE, mode = "wb", handle = new_handle())
+    if (file.exists(filename) == FALSE) {
+      message(sprintf("WARNING: Unable to download file %s from the web.", filename)) 
+      stop()
+    }
   }
+  
+  statefipscodes <- read.delim(filename, 
+                               header=TRUE, 
+                               sep = '|', 
+                               colClasses = fipscolclasses
+  )  
+  
   return(statefipscodes)
+
 }
 
 
@@ -533,7 +547,7 @@ import_covid_subset <- function(fileslist, col_classes){
 }
 
 
-get_texas_metro_county_list <- function(fipsurl){
+get_texas_metro_county_list <- function(fipsurl, remote=TRUE){
   txfips_colclasses <- c('character')
   txfips_colnames <- c('CountyName', 
                        'FIPS',
@@ -548,6 +562,24 @@ get_texas_metro_county_list <- function(fipsurl){
                        'Border_La_Paz',
                        'Border'
   )
+  
+  if (remote == FALSE){
+    portions <- unlist(strsplit(x = fipsurl, split = "/"))
+    localfile <- portions[length(portions)]
+    if (file.exists(localfile) == TRUE) {
+      message(sprintf("File %s exists locally.", localfile))
+      fipsurl = localfile
+    } else {
+      message(sprintf("File %s does not exist locally; will retrieve from URL.", localfile))
+      curl_download(txfipsurl, localfile, quiet = TRUE, mode = "wb", handle = new_handle())
+      if (file.exists(localfile) == FALSE) {
+        message(sprintf("WARNING: Unable to download file %s from network", localfile)) 
+      } else {
+        fipsurl = localfile
+      }
+    }
+  }
+    
   txfips <- read.xls(xls = fipsurl,
                      sheet = 'Sheet1',
                      colClasses = txfips_colclasses
