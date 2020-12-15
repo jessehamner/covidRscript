@@ -29,6 +29,8 @@ setwd('Dropbox/covidRscript')
 # Load helper functions for this work:
 source('covidfunctions.R')
 
+isocodes <- get_iso_country_codes()
+
 # Change this value to average the daily infection count growth rate 
 # for the last x days over a longer/shorter period:
 lookback_days <- 14
@@ -64,6 +66,11 @@ msafips_colclasses = c('CBSA.Code' = 'character',
                        'Central.Outlying.County' = 'character'
                       )
 
+# TODO download this if it isn't local; check for its existence.
+uspopdata <- read.csv(uspopdataurl)
+currentpop <- 'POPESTIMATE2019'
+uspopdata$GEOID <- sprintf('%02g%03g', uspopdata$STATE, uspopdata$COUNTY)
+
 msalist <- get_msa_list(fileurl = msa_list_filename, 
                         col_classes = msafips_colclasses,
                         msafips_columns = msafips_columns)
@@ -74,7 +81,11 @@ lowcolor <- "#EEEEEE"
 highcolor <- "#00002A"
 
 txfipsurl <- 'http://www.dshs.state.tx.us/chs/info/TxCoPhrMsa.xls'
-txfips <- get_texas_metro_county_list(fipsurl = txfipsurl)
+
+# Check for the file locally so we don't have to go get it every time:
+
+
+txfips <- get_texas_metro_county_list(fipsurl = txfipsurl, remote=FALSE)
 metro_msa_name <- 'Dallas-Fort Worth-Arlington'
 dfw_fips <- get_metro_fips(txfips, metro_msa_name)
 
@@ -262,6 +273,8 @@ covid3$cofips <- substr(covid3$newfips, 3,5)
 names(covid5) <- names(covid4)
 covid3 <- rbind(covid3, covid4, covid5)
 
+# Fix a mammoth typo (three orders of magnitude in Okaloosa Co., FL):
+covid3$Active[which(covid3$date == "2020-04-13" & covid3$FIPS == "12091")] <- 102
 
 ################################################################################
 # New York Times US county-level data:
@@ -369,10 +382,9 @@ make_metro_plots(areaname = state,
 
 
 ################################################################################
-# TODO:
 #
 # Display basic polygon map
-#  - Add date, north arrow, scale, etc.
+#  TODO:  Add date, north arrow, scale, etc.
 # Allow for generic MSA pulls by including state and county FIPS in the 
 # function arguments for make_metro_subset() and nyt_subset()
 #
@@ -388,10 +400,6 @@ setwd(uscountymapdir)
 
 
 uscountiesmap <- st_read(uscountymap, stringsAsFactors = FALSE)
-uspopdata <- read.csv(uspopdataurl)
-currentpop <- 'POPESTIMATE2019'
-uspopdata$GEOID <- sprintf('%02g%03g', uspopdata$STATE, uspopdata$COUNTY)
-
 uscountiesmap$Population <- 0
 for (i in seq(1, nrow(uscountiesmap))) {
   matcher <- which(uspopdata$GEOID == uscountiesmap$GEOID[i])
@@ -570,7 +578,7 @@ state_map$POPESTIMATE2019 <- unlist(lapply(X=state_map$GEOID,
 # covid3 -- 'Confirmed' and 'Deaths', clocked by 'date' -- converted 
 # ecdcdata -- "cases" and "deaths", clocked by 'dateRep' or 'day', 'month', 'year'
 
-isocodes <- get_iso_country_codes()
+
 
 countries <- c('USA', 'DEU', 'FRA')
 #cabbr <- 'AFG'
