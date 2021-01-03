@@ -35,6 +35,7 @@ isocodes <- get_iso_country_codes()
 # for the last x days over a longer/shorter period:
 lookback_days <- 14
 
+start_year = 2020
 
 ################################################################################
 # FIPS list of DFW counties & MSAs: 
@@ -228,9 +229,12 @@ setwd(paste(homedir, repo, sep = "/"))
 system('git pull')
 
 setwd(datadir)
-files <- dir(pattern = "\\d{2}-\\d{2}-\\d{4}\\.csv")
 
-# the file format changed on 03.01.2020 and 03.22.2020, and again on 05.27.2020:
+files_2020 <- dir(pattern = "\\d{2}-\\d{2}-2020\\.csv")
+files_2021 <- dir(pattern = "\\d{2}-\\d{2}-2021\\.csv")
+files <- c(files_2020, files_2021)
+# the file format changed on 03.01.2020, 03.22.2020, 05.27.2020, and 11.09.2020:
+# Files get sorted alphabetically, meaning Jan 2020 and Jan 2021 get conflated.
 breakpoint1 <- which(files == "02-29-2020.csv")
 breakpoint2 <- which(files == "03-21-2020.csv")
 breakpoint3 <- which(files == "05-28-2020.csv")

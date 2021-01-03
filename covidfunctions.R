@@ -360,8 +360,8 @@ daily_increase_plot <- function(metro_covid,
        xlab = "",
        ylab = "New Cases Each Day",
        ylim = c(0, ymax_today),
-       axis.cex = 0.7,
-       lab.cex = 0.7
+       cex.axis = 0.9,
+       cex.lab = 0.9
   )
   
   daily_regression <- lm(metro_covid$new_today ~ metro_covid$posixdate)
