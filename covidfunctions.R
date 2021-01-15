@@ -2,7 +2,7 @@
 # covidfunctions.R: a small R function library to use the JHU COVID-19 data and 
 # New York Times data on the US and global pandemic of 2020.
 #
-# Jesse Hamner, 2020
+# Jesse Hamner, 2020--2021
 #
 ################################################################################
 
@@ -823,15 +823,39 @@ make_complete_metro_plot <- function(msalist,
 
 get_iso_country_codes <- function() {
   iso_codes_url <- "https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes"
-  isop1 <- GET(url=iso_codes_url)
-  if(identical(status_code(isop1), 200L)){
-    isopage <- read_html(isop1)
+  filename <- 'isocodes.csv'
+  isonames <- c('countryname', 'officialname', 'sovereignty', 'alpha2',
+                'alpha3', 'numeric', 'subdiv', 'internet_tld')
+
+  # Check for a locally-cached copy first:
+  
+  if (file.exists(filename) == TRUE) {
+    message(sprintf("File %s exists locally.", filename))
+    cleaned_isocodes <- read.csv(filename)
+    
+  } else {
+
+    message(sprintf("File %s does not exist locally; will retrieve from URL.", filename))
+    isop1 <- GET(url=iso_codes_url)
+    if(identical(status_code(isop1), 200L)){
+      isopage <- read_html(isop1)
+    }
+    isocodes <- isopage %>% html_nodes("table") %>% .[[1]] %>% html_table(fill = TRUE)
+    names(isocodes) <- isonames
+    cleaned_isocodes <- isocodes[!grepl(' – See ', isocodes$countryname,
+                                        ignore.case = TRUE, perl = TRUE),]
+    cleaned_isocodes <- cleaned_isocodes[!grepl('Country name', isocodes$countryname,
+                                                ignore.case = TRUE, perl = TRUE),]
+    
+    # Save the good data into filename:
+    write.csv(x = cleaned_isocodes, file = filename, quote = TRUE)
+    
+    # confirm the data write worked okay:
+    if (file.exists(filename) == FALSE) {
+      message(sprintf("WARNING: Unable to download file %s from the web.", filename)) 
+      stop()
+    }
   }
-  isocodes <- isopage %>% html_nodes("table") %>% .[[1]] %>% html_table(fill = TRUE)
-  isonames <- c('countryname', 'officialname', 'sovereignty', 'alpha2', 'alpha3', 'numeric', 'subdiv', 'internet_tld')
-  names(isocodes) <- isonames
-  cleaned_isocodes <- isocodes[!grepl(' – See ', isocodes$countryname, ignore.case = TRUE, perl = TRUE),]
-  cleaned_isocodes <- cleaned_isocodes[!grepl('Country name', isocodes$countryname, ignore.case = TRUE, perl = TRUE),]
   return(cleaned_isocodes)
 }
 
