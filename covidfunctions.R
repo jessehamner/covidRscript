@@ -538,9 +538,13 @@ import_covid_subset <- function(fileslist, col_classes){
     f1 <- read.csv(filename, 
                    header = TRUE, 
                    stringsAsFactors = FALSE,
-                   colClasses = col_classes
+                   colClasses = col_classes,
+                   na.strings='#DIV/0!'
     )
+    
+    message('Success. Adding parsed date.')
     f1$date <- as.Date(strsplit(filename, '\\.')[[1]][1], format = "%m-%d-%Y")
+    message('Binding rows to existing data:')
     covid <- rbind(covid, f1)
   }
   return(covid)
@@ -674,6 +678,11 @@ country_plot <- function(countryname,
   
   country_subset_1 <- make_country_subset(jhudata, 'Country_Region', countryname)
   country_subset_2 <- make_country_subset(ecdcdata, 'countryterritoryCode', iso3abbr)
+  
+  country_subset_2$month <- strftime(strptime(country_subset_2$dateRep, format="%d/%m/%Y"), "%m")
+  country_subset_2$day <- strftime(strptime(country_subset_2$dateRep, format="%d/%m/%Y"), "%d")
+  country_subset_2$year <- strftime(strptime(country_subset_2$dateRep, format="%d/%m/%Y"), "%Y")
+  
   country_subset_2$posixdate <- as.Date(sprintf("%s-%s-%s", country_subset_2$month,
                                                 country_subset_2$day,
                                                 country_subset_2$year),
@@ -814,7 +823,9 @@ make_complete_metro_plot <- function(msalist,
   todaytitle <- sprintf("%s COVID-19 Cases as of %s", msa_name, Sys.Date())
   todaysubtitle <- sprintf("and Percent of County Population Infected")
   metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle)
-  todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", gsub(' ', '', gsub('-|,', '', msa_name)), Sys.Date())
+  todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", 
+                              gsub(' ', '', gsub('-|,', '', msa_name)), Sys.Date())
+  message(sprintf("Creating map: %s", todaymapfilename))
   ggsave(todaymapfilename, plot=metro_plot)
   
   return(TRUE)

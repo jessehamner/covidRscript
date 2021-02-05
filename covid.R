@@ -214,7 +214,9 @@ col_classes5 <- c('FIPS' = 'character',
                   'Incident_Rate' = 'numeric',
                   'Case_Fatality_Ratio' = 'numeric')
 
-
+what5 <- c('character', 'character', 'factor', 'character', 'character', 'double',
+           'double', 'numeric', 'numeric', 'numeric', 'numeric', 'character',
+           'numeric', 'numeric')
 
 ################################################################################
 # Update and import the Johns Hopkins COVID-19 data:
