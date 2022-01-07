@@ -81,9 +81,14 @@ do_state_plots <- function(stfips,
     return(FALSE)
   }
     
-  plot_daily_increase(state = stname,
-                      dataset = state_level,
-                      sourcename = sourcename)
+
+  plot_7day_ma(state = stname,
+               dataset = state_level,
+               sourcename = sourcename)
+  
+#  plot_daily_increase(state = stname,
+#                      dataset = state_level,
+#                      sourcename = sourcename)
   plot_cumulative_cases(state = stname,
                         jhu_data = state_level,
                         nyt_data = nyt_state_level)
@@ -117,6 +122,21 @@ plot_daily_increase <- function(state, dataset,
   )
   return (0)
 }
+
+
+plot_7day_ma <- function(state, dataset, 
+                                lookback_days = 14,
+                                sourcename = "Source: Johns Hopkins Univ. Center for Systems Science and Engineering") {
+  message(sprintf('Writing daily case increase graphic for %s', state))
+  basic_plot(sprintf('%s_covid19_confirmed_daily_increase.png', gsub(' ', '_', state)),
+             sevenday_mov_avg_plot(dataset,
+                                   metro_label = state,
+                                   lookback_days = lookback_days,
+                                   sourcename = sourcename)
+  )
+  return (0)
+}
+
 
 
 plot_cumulative_cases <- function(state, jhu_data, nyt_data){
@@ -262,6 +282,13 @@ make_state_data <- function(inputdf, stfips = '48') {
                                    by = list(st_covid_base$posixdate))$x
   
   st_covid$active_cases <- st_covid$Confirmed - st_covid$total_dead
+  
+  st_covid <- st_covid %>% 
+    dplyr::mutate(newcases_07da = zoo::rollmean(new_today, k=7, fill=NA)) %>% 
+    dplyr::ungroup()
+  
+  st_covid <- st_covid[which(!is.na(st_covid$newcases_07da)),]
+  
   return(st_covid)
 }
 
@@ -365,8 +392,7 @@ daily_increase_plot <- function(metro_covid,
   )
   
   daily_regression <- lm(metro_covid$new_today ~ metro_covid$posixdate)
-  slope_today <- daily_regression$coefficients[[2]]
-  slope_label <- sprintf("%0.1f", slope_today)
+  slope_label <- sprintf("%0.1f", daily_regression$coefficients[[2]])
   last_week <- metro_covid[which(metro_covid$posixdate >= (max(metro_covid$posixdate) - lookback_days)),]
   daily_regression_last_week <- lm(last_week$new_today ~ last_week$posixdate)
   slope_last_week_label <- sprintf("%0.1f", daily_regression_last_week$coefficients[[2]])
@@ -430,11 +456,103 @@ daily_increase_plot <- function(metro_covid,
   text(x = as.numeric(max(metro_covid$posixdate)) - textposition,
        y = ymax_today * 0.05,
        cex = 0.85, 
-       labels = c("Note: data under-reported due to lack of testing.")
+       labels = c()
+       # labels = c("Note: data under-reported due to lack of testing.")
   )
   
   return(0)
 }
+
+
+sevenday_mov_avg_plot <- function(metro_covid,
+                                  metro_label,
+                                  lookback_days = 14, 
+                                  sourcename="Source: Johns Hopkins Univ. Center for Systems Science and Engineering"){
+  
+  ymax_today <- max(metro_covid$newcases_07da) * 1.3
+  #format(metro_covid$new_today,scientific=FALSE)
+  options(scipen=5)
+  plot(metro_covid$posixdate, 
+       metro_covid$newcases_07da, 
+       type = "l",
+       main = sprintf('%s\n7-day moving average of new COVID-19 cases', metro_label),
+       xlab = "",
+       ylab = "New Cases Each Day, Avg.",
+       ylim = c(0, ymax_today),
+       cex.axis = 0.9,
+       cex.lab = 0.9
+  )
+  
+  xmax <- as.numeric(max(metro_covid$posixdate))
+  xmin <- as.numeric(min(metro_covid$posixdate))
+  framewidth <- xmax - xmin
+  textposition <- 0.5 * framewidth
+  daily_regression <- lm(metro_covid$newcases_07da ~ metro_covid$posixdate)
+  slope_label <- sprintf("%0.1f", daily_regression$coefficients[[2]])
+  last_week <- metro_covid[which(metro_covid$posixdate >= (max(metro_covid$posixdate) - lookback_days)),]
+  daily_regression_last_week <- lm(last_week$newcases_07da ~ last_week$posixdate)
+  slope_last_week_label <- sprintf("%0.1f", daily_regression_last_week$coefficients[[2]])
+  
+  abline(daily_regression, col = '#6666bb', lty = 2, lwd = 3)
+  lines(last_week$posixdate,
+        predict.lm(daily_regression_last_week),
+        col = '#aa6666',
+        lwd = 3
+  )
+  
+  best_params <- longest_improvement(metro_covid, lookback_days)
+  if (is.na(best_params[1]) || is.na(best_params[2])) {
+    return(FALSE)
+  }
+  best_period <- metro_covid[best_params[1]:(best_params[1] + best_params[2]),]
+  best_daily_regression <- lm(best_period$newcases_07da ~ best_period$posixdate)
+  lines(best_period$posixdate,
+        predict.lm(best_daily_regression),
+        col = '#66aa66',
+        lwd = 3
+  )
+  best_slope_label <- sprintf("%0.1f", best_daily_regression$coefficients[[2]])
+  
+  # Draw the legend:
+  legend(x = as.numeric(min(metro_covid$posixdate)) - 0.5,
+         y = ymax_today,
+         legend = c(sprintf("Average daily acceleration: %s cases",
+                            slope_label
+                    ), 
+                    sprintf("Avg. acceleration (last %s days): %s cases", 
+                            lookback_days, slope_last_week_label
+                    ),
+                    sprintf("Avg. acceleration (best %s days): %s cases", 
+                            lookback_days, best_slope_label
+                    )
+         ), 
+         lty = c(2, 1, 1), 
+         lwd = c(3, 3, 3), 
+         col = c("#6666bb", "#aa6666", "#66aa66"))
+  
+  rect(xleft = xmin + (framewidth * 0.125), 
+       xright = xmax - (framewidth * 0.125),
+       ytop = ymax_today * 0.03,
+       ybottom = - ymax_today * 0.02,
+       col="#f9f9f9bb", 
+       border = "#ccccccee"
+      )
+  text(x = xmax - textposition,
+       y = 0,
+       labels = c(sourcename),
+       cex = 0.5,
+       font = 3
+      )
+  text(x = xmax - textposition,
+       y = ymax_today * 0.05,
+       cex = 0.85, 
+       labels = c()
+       # labels = c("Note: data under-reported due to lack of testing.")
+      )
+  
+  return(0)
+}
+
 
 
 holt_winters_smoothing <- function(covid) {
@@ -727,18 +845,16 @@ make_metro_map_generic <- function(countiesmap, msa_name, msalist, covid_data) {
   # COVID-19 data broken out by counties:
   metro_covid3 <- covid_data[unlist(lapply(X = seq(1, nrow(metro_fips)),
                                            FUN = function(x) { which(covid_data$stfips == metro_fips$stfips[x] & 
-                                                                       covid_data$cofips == metro_fips$cofips[x]
-                                           )
-                                           }
-  )
-  ),]
+                                                                     covid_data$cofips == metro_fips$cofips[x]
+                                                                    )
+                                                             })),]
   covid3_metro_yesterday <- metro_covid3[which(metro_covid3$date == Sys.Date() - 1),]
   metrocountymap$Confirmed <- 0
   metrocountymap$Confirmed <- covid3_metro_yesterday$Confirmed[unlist(lapply(X = seq(1,nrow(metrocountymap)),
                                                                              FUN = function(x) {
                                                                                which(covid3_metro_yesterday$cofips == metrocountymap$COUNTYFP[x] & 
-                                                                                       covid3_metro_yesterday$stfips == metrocountymap$STATEFP[x]
-                                                                               )
+                                                                                     covid3_metro_yesterday$stfips == metrocountymap$STATEFP[x]
+                                                                                    )
                                                                              }
                                                                             )
                                                                      )
@@ -817,8 +933,8 @@ make_complete_metro_plot <- function(msalist,
   metrocountymap <- make_metro_map_generic(countiesmap = uscountiesmap,
                                            msa_name = msa_name,
                                            msalist = msalist, 
-                                           covid_data = covid3
-  )
+                                           covid_data = covid_data
+                                          )
   
   todaytitle <- sprintf("%s COVID-19 Cases as of %s", msa_name, Sys.Date())
   todaysubtitle <- sprintf("and Percent of County Population Infected")
@@ -868,6 +984,18 @@ get_iso_country_codes <- function() {
     }
   }
   return(cleaned_isocodes)
+}
+
+
+do_posixtime <- function(covid_data) {
+  covid_data$posixtime <- strptime(x = covid_data$Last_Update, format="%Y-%m-%d %H:%M:%S", tz="GMT")
+  covid_data[which(is.na(covid_data$posixtime)),]$posixtime <- strptime(x = covid_data[which(is.na(covid_data$posixtime)),]$Last_Update, 
+                                                                            tz="GMT",
+                                                                            format="%D %R")
+  covid_data[which(is.na(covid_data$posixtime)),]$posixtime <- strptime(x = covid_data[which(is.na(covid_data$posixtime)),]$Last_Update,
+                                                                            tz="GMT",
+                                                                            format="%m/%e/%y %R")
+  return(covid_data)
 }
 
 # EOF

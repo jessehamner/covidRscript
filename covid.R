@@ -21,6 +21,7 @@ library(rvest)
 library(colorspace)
 library(zoo)
 library(readxl)
+library(dplyr)
 
 homedir <- Sys.getenv('HOME')
 outputdir <- sprintf('%s/%s', homedir, 'covid')
@@ -228,13 +229,15 @@ covid <- data.frame()
 
 # Get list of daily data files with file pattern like: "04-02-2020.csv"
 setwd(paste(homedir, repo, sep = "/"))
+system('git config pull.rebase false')
 system('git pull')
 
 setwd(datadir)
 
 files_2020 <- dir(pattern = "\\d{2}-\\d{2}-2020\\.csv")
 files_2021 <- dir(pattern = "\\d{2}-\\d{2}-2021\\.csv")
-files <- c(files_2020, files_2021)
+files_2022 <- dir(pattern = "\\d{2}-\\d{2}-2022\\.csv")
+files <- c(files_2020, files_2021, files_2022)
 # the file format changed on 03.01.2020, 03.22.2020, 05.27.2020, and 11.09.2020:
 # Files get sorted alphabetically, meaning Jan 2020 and Jan 2021 get conflated.
 breakpoint1 <- which(files == "02-29-2020.csv")
@@ -248,10 +251,15 @@ files3 <- files[(breakpoint2 + 1):breakpoint3]
 files4 <- files[(breakpoint3 + 1):breakpoint4]
 files5 <- files[(breakpoint4 + 1):length(files)]
 
+# TODO save these files locally and just check to see if they exist instead
+# of re-importing ALL the files every time.
+# only covid5 would need to be imported "fresh" each time, and even then
+# I could chunk the data into local files by months or something.
 covid1 <- import_covid_subset(fileslist = files1, col_classes = col_classes1)
 covid2 <- import_covid_subset(fileslist = files2, col_classes = col_classes2)
 covid3 <- import_covid_subset(fileslist = files3, col_classes = col_classes3)
 covid4 <- import_covid_subset(fileslist = files4, col_classes = col_classes4)
+
 covid5 <- import_covid_subset(fileslist = files5, col_classes = col_classes5)
 
 covid4$newfips <- sprintf("%05.0f", as.integer(covid4$FIPS))
@@ -282,6 +290,7 @@ covid3 <- rbind(covid3, covid4, covid5)
 # Fix a mammoth typo (three orders of magnitude in Okaloosa Co., FL):
 covid3$Active[which(covid3$date == "2020-04-13" & covid3$FIPS == "12091")] <- 102
 
+
 ################################################################################
 # New York Times US county-level data:
 ################################################################################
@@ -296,6 +305,7 @@ nyt_col_classes <- c('date' = 'character',
                      'deaths' = 'numeric')
 
 setwd(paste(homedir, nyt_repo, sep = '/'))
+system('git config pull.rebase false')
 system('git pull')
 nyt <- read.csv('us-counties.csv',
                 header = TRUE, 
@@ -308,7 +318,8 @@ nyt$posixdate <- as.Date(nyt$date, format = "%Y-%m-%d")
 ################################################################################
 # EU / ECDC data:
 ################################################################################
-ecdcdata <- read.csv("https://opendata.ecdc.europa.eu/covid19/casedistribution/csv",
+# New data location (weekly, not daily): https://opendata.ecdc.europa.eu/covid19/nationalcasedeath/csv
+ecdcdata <- read.csv("https://opendata.ecdc.europa.eu/covid19/nationalcasedeath/csv",
                      na.strings = "",
                      fileEncoding = "UTF-8-BOM")
 ecdclabel <- "Source: European Centre for Disease Prevention and Control"
@@ -431,14 +442,8 @@ metro_covid3 <- covid3[unlist(lapply(X = seq(1, nrow(metro_fips)),
                                     )
                              )
                       ,]
-metro_covid3$posixtime <- strptime(x = metro_covid3$Last_Update, format="%Y-%m-%d %H:%M:%S", tz="GMT")
-metro_covid3[which(is.na(metro_covid3$posixtime)),]$posixtime <- strptime(x = metro_covid3[which(is.na(metro_covid3$posixtime)),]$Last_Update, 
-                                                                          tz="GMT",
-                                                                          format="%D %R")
-metro_covid3[which(is.na(metro_covid3$posixtime)),]$posixtime <- strptime(x = metro_covid3[which(is.na(metro_covid3$posixtime)),]$Last_Update,
-                                                                          tz="GMT",
-                                                                          format="%m/%e/%y %R")
 
+metro_covid3 <- do_posixtime(metro_covid3) 
 covid3_metro_yesterday <- metro_covid3[which(metro_covid3$date == as.Date(max(metro_covid3$posixtime)) - 1),]
 metrocountymap$Confirmed <- 0
 
@@ -451,6 +456,13 @@ for (x in seq(1, nrow(covid3_metro_yesterday))) {
 }
 
 metrocountymap$percent_infected <- 100 * (metrocountymap$Confirmed / metrocountymap$Population)
+
+
+#metrocountymap <- metrocountymap %>% 
+#  dplyr::mutate(newcases_07da = zoo::rollmean(new_today, k=7, fill=NA)) %>% 
+#  dplyr::ungroup()
+#metrocountymap <- metrocountymap[which(!is.na(metrocountymap$newcases_07da)),]
+
 
 todaytitle <- sprintf("%s COVID-19 Cases as of %s", msaname, Sys.Date())
 todaysubtitle <- sprintf("and Percent of County Population Infected")
@@ -586,7 +598,7 @@ state_map$POPESTIMATE2019 <- unlist(lapply(X=state_map$GEOID,
 
 
 
-countries <- c('USA', 'DEU', 'FRA')
+countries <- c('DEU', 'FRA')
 #cabbr <- 'AFG'
 
 for(i in seq(1,length(countries))) {
@@ -615,4 +627,8 @@ write.csv(x=sandiego,
          )
 
 
+okaloosa <- covid3[which(covid3$FIPS==12091),]
+write.csv(x=okaloosa, file="okaloosa.csv")
+nebraska <- covid3[which(covid3$Province_State == "Nebraska"),]
+write.csv(x=nebraska, file="nebraska.csv")
 
