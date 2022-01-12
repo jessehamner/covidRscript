@@ -8,7 +8,7 @@
 # and
 # https://opendata.ecdc.europa.eu/covid19/casedistribution/csv
 #
-# Jesse Hamner, 2020
+# Jesse Hamner, 2020-2022
 #
 ################################################################################
 
