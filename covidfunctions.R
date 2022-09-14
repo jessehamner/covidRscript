@@ -31,9 +31,7 @@ import_fips_codes <- function(pageurl,
                                sep = '|', 
                                colClasses = fipscolclasses
   )  
-  
   return(statefipscodes)
-
 }
 
 
@@ -41,7 +39,6 @@ make_country_subset <- function(dataset, cvar, cname) {
   country_subset <- dataset[which(dataset[[cvar]] == cname),]
   return(country_subset)
 }
-
 
 
 do_country_plot <- function(countryname, inputjhu) {
@@ -971,7 +968,7 @@ get_iso_country_codes <- function() {
     names(isocodes) <- isonames
     cleaned_isocodes <- isocodes[!grepl(' – See ', isocodes$countryname,
                                         ignore.case = TRUE, perl = TRUE),]
-    cleaned_isocodes <- cleaned_isocodes[!grepl('Country name', isocodes$countryname,
+    cleaned_isocodes <- cleaned_isocodes[!grepl('Country name', cleaned_isocodes$countryname,
                                                 ignore.case = TRUE, perl = TRUE),]
     
     # Save the good data into filename:
