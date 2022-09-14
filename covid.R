@@ -10,6 +10,13 @@
 #
 # Jesse Hamner, 2020-2022
 #
+# Note that Perl must be installed and accessible to R.
+# Especially the Spreadsheet::ParseXLSX module is expected.
+# You should first install CPAN::DistnameInfo, XML::XPath, 
+#   IO::Socket::SSL or Net::SSL as well
+#
+#
+# Test::Pod 
 ################################################################################
 
 library(httr)
@@ -221,6 +228,11 @@ what5 <- c('character', 'character', 'factor', 'character', 'character', 'double
 
 ################################################################################
 # Update and import the Johns Hopkins COVID-19 data:
+# https://github.com/CSSEGISandData/COVID-19/
+#
+# To mirror the repository locally, in (here) a directory called COVID-19:
+#
+# git clone https://github.com/CSSEGISandData/COVID-19.git ./COVID-19
 ################################################################################
 
 repo <- 'COVID-19'
@@ -405,6 +417,13 @@ make_metro_plots(areaname = state,
 # Allow for generic MSA pulls by including state and county FIPS in the 
 # function arguments for make_metro_subset() and nyt_subset()
 #
+# GIS data can be obtained from:
+# https://www2.census.gov/geo/tiger/TIGER2017/STATE/
+#
+# https://www.census.gov/geographies/mapping-files/2015/geo/carto-boundary-file.html
+# 
+#
+
 ################################################################################
 
 mapdir <- 'Downloads/GIS Data'
