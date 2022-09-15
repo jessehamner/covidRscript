@@ -171,9 +171,9 @@ make_metro_map <- function(countiesmap, msa_name, msalist, varname = 'CBSATitle'
   msa_fips <- get_metro_fips_2(msalist, msa_name = msa_name, varname = varname)
   
   countiesmap$newfips <- sprintf('%s%s', countiesmap$STATEFP, countiesmap$COUNTYFP)
-  returnmap <- countiesmap[unlist(lapply(X = seq(1, nrow(msa_fips)), 
-                                         FUN = function(x){ which(countiesmap$newfips == msa_fips$newfips[x])}
-                                         )),]
+  returnmap <- countiesmap[sapply(X = seq(1, nrow(msa_fips)), 
+                                  FUN = function(x){ which(countiesmap$newfips == msa_fips$newfips[x])}
+                                 ),]
   return(returnmap)
 }
 
@@ -191,12 +191,12 @@ make_metro_subset <- function(inputdf, cofipslist) {
   
   # Check both state and county per each row in cofipslist,
   # as some metro areas cross state boundaries.
-  covid_rows <- unlist(lapply(X = seq(1,nrow(cofipslist)),
-                              FUN = function(x) { which(as.numeric(inputdf[["stfips"]]) == as.numeric(cofipslist$stfips[x]) & 
-                                                        as.numeric(inputdf[["cofips"]]) == as.numeric(cofipslist$cofips[x])
-                                                       )
-                                                }
-                             )
+  covid_rows <- sapply(X = seq(1,nrow(cofipslist)),
+                       FUN = function(x) { 
+                         which(as.numeric(inputdf[["stfips"]]) == as.numeric(cofipslist$stfips[x]) & 
+                               as.numeric(inputdf[["cofips"]]) == as.numeric(cofipslist$cofips[x])
+                              )
+                       }
                       )
   
   metro_covid_base <- inputdf[covid_rows,]
@@ -225,9 +225,10 @@ make_state_subset <- function(inputdf, state_map) {
   cofipslist <- unique(inputdf$cofips)
   
   # Check county fips or combined FIPS variable for each row in cofipslist
-  covid_rows <- unlist(lapply(X = seq(1,length(cofipslist)),
-                              FUN = function(x) { which(as.numeric(inputdf[["cofips"]]) == as.numeric(state_map$COUNTYFP[x]))}
-                             )
+  covid_rows <- sapply(X = seq(1,length(cofipslist)),
+                       FUN = function(x) { 
+                           which(as.numeric(inputdf[["cofips"]]) == as.numeric(state_map$COUNTYFP[x]))
+                       }
                       )
   
   metro_covid_base <- inputdf[covid_rows,]
@@ -831,49 +832,48 @@ make_metro_map_generic <- function(countiesmap, msa_name, msalist, covid_data) {
                                  msa_name = msa_name, 
                                  varname = 'CBSATitle'
   )
-  metrocountymap <- make_metro_map(countiesmap = countiesmap,
-                                   msa_name = msa_name,
-                                   msalist = msalist
+  met_co_map <- make_metro_map(countiesmap = countiesmap,
+                               msa_name = msa_name,
+                               msalist = msalist
   )
   
   # Aggregated data for the entire MSA:
   # metro_covid3 <- make_metro_subset(inputdf = covid3, cofipslist = nola_fips)
   
   # COVID-19 data broken out by counties:
-  metro_covid3 <- covid_data[unlist(lapply(X = seq(1, nrow(metro_fips)),
-                                           FUN = function(x) { which(covid_data$stfips == metro_fips$stfips[x] & 
-                                                                     covid_data$cofips == metro_fips$cofips[x]
-                                                                    )
-                                                             })),]
-  covid3_metro_yesterday <- metro_covid3[which(metro_covid3$date == Sys.Date() - 1),]
-  metrocountymap$Confirmed <- 0
-  metrocountymap$Confirmed <- covid3_metro_yesterday$Confirmed[unlist(lapply(X = seq(1,nrow(metrocountymap)),
-                                                                             FUN = function(x) {
-                                                                               which(covid3_metro_yesterday$cofips == metrocountymap$COUNTYFP[x] & 
-                                                                                     covid3_metro_yesterday$stfips == metrocountymap$STATEFP[x]
-                                                                                    )
-                                                                             }
-                                                                            )
-                                                                     )
-                                                              ]
+  metro_covid3 <- covid_data[sapply(X = seq(1, nrow(metro_fips)),
+                                    FUN = function(x) { 
+                                      which(covid_data$stfips == metro_fips$stfips[x] & 
+                                            covid_data$cofips == metro_fips$cofips[x]
+                                           )
+                                    }),]
+  cv_m_yest <- metro_covid3[which(metro_covid3$date == Sys.Date() - 1),]
+  met_co_map$Confirmed <- 0
+  met_co_map$Confirmed <- cv_m_yest$Confirmed[sapply(X = seq(1,nrow(met_co_map)),
+                                                     FUN = function(x) {
+                                                       which(cv_m_yest$cofips == met_co_map$COUNTYFP[x] & 
+                                                             cv_m_yest$stfips == met_co_map$STATEFP[x]
+                                                            )
+                                                     }
+                                                    )
+                                             ]
   
-  
-  metrocountymap$Confirmed[which(is.na(metrocountymap$Confirmed))] <- 0
+  met_co_map$Confirmed[which(is.na(met_co_map$Confirmed))] <- 0
   uspopbycounty <- get_us_population_by_county(year = 2019)
   
-  metrocountymap$Population <- 0
-  metrocountymap$Population <- uspopbycounty$POPESTIMATE2019[unlist(lapply(X = seq(1,nrow(metrocountymap)), 
-                                                                           FUN = function(x) {
-                                                                             which(uspopbycounty$stfips == metrocountymap$STATEFP[x] & uspopbycounty$cofips == metrocountymap$COUNTYFP[x])
-                                                                           }
-                                                                          )
-                                                                   )
-                                                            ]
+  met_co_map$Population <- 0
+  met_co_map$Population <- 
+    uspopbycounty$POPESTIMATE2019[sapply(X = seq(1,nrow(met_co_map)), 
+                                         FUN = function(x) {
+                                           which(uspopbycounty$stfips == met_co_map$STATEFP[x] & 
+                                                 uspopbycounty$cofips == met_co_map$COUNTYFP[x]
+                                                )
+                                         })]
   
-  metrocountymap$percent_infected <- 0
-  metrocountymap$percent_infected <- 100 * (metrocountymap$Confirmed / metrocountymap$Population)
+  met_co_map$percent_infected <- 0
+  met_co_map$percent_infected <- 100 * (met_co_map$Confirmed / met_co_map$Population)
   
-  return(metrocountymap)
+  return(met_co_map)
 }
 
 
