@@ -330,7 +330,8 @@ nyt$posixdate <- as.Date(nyt$date, format = "%Y-%m-%d")
 ################################################################################
 # EU / ECDC data:
 ################################################################################
-# New data location (weekly, not daily): https://opendata.ecdc.europa.eu/covid19/nationalcasedeath/csv
+# New data location (weekly, not daily): 
+# https://opendata.ecdc.europa.eu/covid19/nationalcasedeath/csv
 ecdcdata <- read.csv("https://opendata.ecdc.europa.eu/covid19/nationalcasedeath/csv",
                      na.strings = "",
                      fileEncoding = "UTF-8-BOM")
@@ -488,7 +489,9 @@ todaysubtitle <- sprintf("and Percent of County Population Infected")
 
 metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle)
 
-todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", gsub(' ', '', gsub('-|,', '', msaname)), Sys.Date())
+todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", 
+                            gsub(' ', '', gsub('-|,', '', msaname)), Sys.Date()
+                           )
 setwd(outputdir)
 ggsave(todaymapfilename, plot=metro_plot)
 
@@ -533,8 +536,8 @@ poplist <- get_us_population_by_county(2019)
 dfw_counties_map$Population <- 0
 dfw_counties_map$Population <- as.numeric(lapply(X = as.numeric(dfw_counties_map$GEOID), 
                                                  FUN = function(x) {
-                                                                    gsub(',', '', poplist$POPESTIMATE2019[which(poplist$newfips == x)])
-                                                                   }
+                                                   gsub(',', '', poplist$POPESTIMATE2019[which(poplist$newfips == x)])
+                                                 }
                                                 )
                                          )
 
@@ -602,9 +605,10 @@ state_map <- uscountiesmap[which(uscountiesmap$STATEFP == state_code),]
 covid3_state <- txcovid3[which(txcovid3$stfips == state_code),]
 covid3_state_counties <- unique(covid3_state$cofips)
 state_map$POPESTIMATE2019 <- 0
-state_map$POPESTIMATE2019 <- unlist(lapply(X=state_map$GEOID,
-                                           FUN = function(x){poplist$POPESTIMATE2019[which(poplist$newfips == x)]}))
-
+state_map$POPESTIMATE2019 <- sapply(X=state_map$GEOID,
+                                    FUN = function(x){
+                                      poplist$POPESTIMATE2019[which(poplist$newfips == x)]
+                                    })
 
 # sum cases over unique counties (no dates)
 # sum new cases *today* over unique counties (only today's date)
@@ -637,7 +641,9 @@ california <- covid3[which(covid3$Country_Region == "US" & covid3$Province_State
 sandiego <- california[which(california$Admin2 == "San Diego"),]
 sandiego$newcases <- 0
 sandiego$newcases[2:nrow(sandiego)] <- unlist(sapply(X=seq(1,nrow(sandiego)), 
-                                                     FUN = function(x) {sandiego$Confirmed[x] - sandiego$Confirmed[x-1]}))
+                                                     FUN = function(x) {
+                                                       sandiego$Confirmed[x] - sandiego$Confirmed[x-1]
+                                                     }))
 write.csv(x=sandiego,
           file="san_diego_california_usa.csv", 
           quote = TRUE,
