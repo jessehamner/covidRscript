@@ -191,13 +191,13 @@ make_metro_subset <- function(inputdf, cofipslist) {
   
   # Check both state and county per each row in cofipslist,
   # as some metro areas cross state boundaries.
-  covid_rows <- sapply(X = seq(1,nrow(cofipslist)),
-                       FUN = function(x) { 
+  covid_rows <- unlist(sapply(X = seq(1, nrow(cofipslist)),
+                       FUN = function(x) {
                          which(as.numeric(inputdf[["stfips"]]) == as.numeric(cofipslist$stfips[x]) & 
                                as.numeric(inputdf[["cofips"]]) == as.numeric(cofipslist$cofips[x])
                               )
                        }
-                      )
+                      ))
   
   metro_covid_base <- inputdf[covid_rows,]
   
@@ -658,9 +658,9 @@ import_covid_subset <- function(fileslist, col_classes){
                    na.strings='#DIV/0!'
     )
     
-    message('Success. Adding parsed date.')
+    message(sprintf("Success. Adding parsed date: %s", strsplit(filename, '\\.')[[1]][1]))
     f1$date <- as.Date(strsplit(filename, '\\.')[[1]][1], format = "%m-%d-%Y")
-    message('Binding rows to existing data:')
+    # message('Binding rows to existing data:')
     covid <- rbind(covid, f1)
   }
   return(covid)
@@ -745,15 +745,53 @@ get_metro_fips_locally <- function(fipsdir = Sys.getenv('HOME'),
 
 
 get_msa_list <- function(fileurl, col_classes, msafips_columns) {
-  file_like_object <- GET(fileurl)$content
-  writeBin(file_like_object, con = 'excelfips.xls')
+  localfilename <- 'excelfips.xls'
+  # Check to see if the file exists locally first:
+  if (file.exists(localfilename) == TRUE) {
+    message(sprintf("File %s exists locally.", localfilename))
+  } else {
+    message(sprintf("File %s does not exist locally; will retrieve from URL.", localfilename))
+    curl_download(url = fileurl,
+                  destfile = localfilename, 
+                  quiet = TRUE, 
+                  mode = "wb", 
+                  handle = new_handle())
+    if (file.exists(localfilename) == FALSE) {
+      message(sprintf("WARNING: Unable to download file %s from the web.", localfilename)) 
+      stop()
+    }
+  }
   
-  msafips <- read.xls(xls = 'excelfips.xls',
+  msafips <- read.xls(xls = localfilename,
                      pattern = 'CBSA Code',
                      colClasses = col_classes
                     )
   names(msafips) <- msafips_columns
   return(msafips)
+}
+
+
+get_pop_data <- function(localfilename, census_url) {
+  
+  if (file.exists(localfilename) == TRUE) {
+    message(sprintf("File %s exists locally.", localfilename))
+  } else {
+    message(sprintf("File %s does not exist locally; will retrieve from URL.", localfilename))
+    curl_download(url = census_url,
+                  destfile = localfilename, 
+                  quiet = TRUE, 
+                  mode = "wb", 
+                  handle = new_handle())
+    if (file.exists(localfilename) == FALSE) {
+      message(sprintf("WARNING: Unable to download file %s from the web.", localfilename)) 
+      stop()
+    }
+  }
+  
+  uspopdata <- read.csv(localfilename)
+  uspopdata$GEOID <- sprintf('%02g%03g', uspopdata$STATE, uspopdata$COUNTY)
+  
+  return(uspopdata)
 }
 
 
@@ -841,12 +879,25 @@ make_metro_map_generic <- function(countiesmap, msa_name, msalist, covid_data) {
   # metro_covid3 <- make_metro_subset(inputdf = covid3, cofipslist = nola_fips)
   
   # COVID-19 data broken out by counties:
-  metro_covid3 <- covid_data[sapply(X = seq(1, nrow(metro_fips)),
-                                    FUN = function(x) { 
-                                      which(covid_data$stfips == metro_fips$stfips[x] & 
-                                            covid_data$cofips == metro_fips$cofips[x]
-                                           )
-                                    }),]
+  m_c_3_data_rows <- sapply(X = seq(1, nrow(metro_fips)),
+                            FUN = function(x) { 
+                              which(covid_data$stfips == metro_fips$stfips[x] & 
+                                      covid_data$cofips == metro_fips$cofips[x]
+                              )
+                            }, simplify=TRUE)
+  
+  if(is.integer(m_c_3_data_rows)) {
+    message(sprintf("There are %g rows in the metro_covid3 subset.", nrow(m_c_3_data_rows)))
+  }
+  if(is.list(m_c_3_data_rows)) {
+    message(sprintf("The metro_covid3 subset has a problem, and thinks it should be a list of length %g", length(m_c_3_data_rows)))
+    m_c_3_data_rows <- unlist(m_c_3_data_rows)   # ugly fix.
+  }
+  
+  # COVID-19 data broken out by counties:
+  message('Subsetting metro_covid3 with the rows in m_c_3_data_rows.')
+  metro_covid3 <- covid_data[m_c_3_data_rows,]
+  
   cv_m_yest <- metro_covid3[which(metro_covid3$date == Sys.Date() - 1),]
   met_co_map$Confirmed <- 0
   met_co_map$Confirmed <- cv_m_yest$Confirmed[sapply(X = seq(1,nrow(met_co_map)),
@@ -926,6 +977,7 @@ make_complete_metro_plot <- function(msalist,
                                      varname='CBSATitle') {
   
   setwd(dest_dir)
+  message(sprintf("MSA: %s", msa_name))
   metro_fips <- get_metro_fips_2(msalist, msa_name = msa_name, varname = 'CBSATitle')
   metrocountymap <- make_metro_map_generic(countiesmap = uscountiesmap,
                                            msa_name = msa_name,
@@ -993,6 +1045,238 @@ do_posixtime <- function(covid_data) {
                                                                             tz="GMT",
                                                                             format="%m/%e/%y %R")
   return(covid_data)
+}
+
+
+
+
+import_jhu_2020 <- function(filestub) {
+  year  <- 2020
+  # Check for the csv for each completed year; this saves a lot of time loading.
+  fn_year = sprintf('%s%s.csv', filestub, year)
+  if (file.exists(fn_year) == TRUE) {
+    message(sprintf("File %s exists locally.", fn_year))
+    covid3 <- read.csv(fn_year, stringsAsFactors = FALSE)
+    return(covid3)
+  } else {
+    message(sprintf("File %s does not exist locally; will read in individual files", fn_year))
+  }
+  
+  ################################################################################
+  # Johns Hopkins's data have changed format a few times.
+  ################################################################################
+  
+  # After 11/08/2020:
+  header5 <- c('FIPS', 'Admin2', 'Province_State', 'Country_Region', 'Last_Update',
+               'Lat', 'Long_', 'Confirmed', 'Deaths', 'Recovered', 'Active',
+               'Combined_Key', 'Incidence_Rate', 'Case_Fatality_Ratio'
+  )
+  
+  # After 5/29/2020:
+  header4 <- c('FIPS', 'Admin2', 'Province_State', 'Country_Region', 'Last_Update',
+               'Lat', 'Long_', 'Confirmed', 'Deaths', 'Recovered', 'Active',
+               'Combined_Key', 'Incidence_Rate', 'Case.Fatality_Ratio'
+  )
+  
+  # After 3/21/2020:
+  header3 <- c('FIPS', 'Admin2', 'Province_State', 'Country_Region', 'Last_Update',
+               'Lat', 'Long_', 'Confirmed', 'Deaths', 'Recovered', 'Active',
+               'Combined_Key'
+  )
+  
+  # on or before 3/21/2020 but after 02/29/2020:
+  header2 <- c('Province/State', 'Country/Region', 'Last Update', 'Confirmed', 
+               'Deaths', 'Recovered', 'Latitude', 'Longitude'
+  )
+  
+  # 02/29/2020 and before:
+  header1 <- c('Province/State', 'Country/Region', 'Last Update', 'Confirmed', 
+               'Deaths', 'Recovered'
+  )
+  
+  # datetime format: "2020-02-29T12:13:10"
+  # Province/State,Country/Region,Last Update,Confirmed,Deaths,Recovered
+  col_classes1 <- c('Province.State' = 'factor',
+                    'Country.Region' = 'character',
+                    'Last.Update' = 'character',
+                    'Confirmed' = 'numeric',
+                    'Deaths' = 'numeric',
+                    'Recovered' = 'numeric')
+  
+  col_classes2 <- c('Province.State' = 'factor',
+                    'Country.Region' = 'character',
+                    'Last.Update' = 'character',
+                    'Confirmed' = 'numeric',
+                    'Deaths' = 'numeric',
+                    'Recovered' = 'numeric',
+                    'Latitude' = 'double',
+                    'Longitude' = 'double')
+  
+  col_classes3 <- c('FIPS' = 'character',
+                    'Admin2' = 'character',
+                    'Province_State' = 'factor',
+                    'Country_Region' = 'character',
+                    'Last_Update' = 'character',
+                    'Lat' = 'double',
+                    'Long_' = 'double',
+                    'Confirmed' = 'numeric',
+                    'Deaths' = 'numeric',
+                    'Recovered' = 'numeric',
+                    'Active' = 'numeric',
+                    'Combined_Key' = 'character')
+  
+  # FIPS,Admin2,Province_State,Country_Region,Last_Update,Lat,Long_,Confirmed,Deaths,
+  # Recovered,Active,Combined_Key,Incidence_Rate,Case-Fatality_Ratio
+  col_classes4 <- c('FIPS' = 'character',
+                    'Admin2' = 'character',
+                    'Province_State' = 'factor',
+                    'Country_Region' = 'character',
+                    'Last_Update' = 'character',
+                    'Lat' = 'double',
+                    'Long_' = 'double',
+                    'Confirmed' = 'numeric',
+                    'Deaths' = 'numeric',
+                    'Recovered' = 'numeric',
+                    'Active' = 'numeric',
+                    'Combined_Key' = 'character',
+                    'Incidence_Rate' = 'numeric',
+                    'Case.Fatality_Ratio' = 'numeric')
+  
+  
+  col_classes5 <- c('FIPS' = 'character',
+                    'Admin2' = 'character',
+                    'Province_State' = 'factor',
+                    'Country_Region' = 'character',
+                    'Last_Update' = 'character',
+                    'Lat' = 'double',
+                    'Long_' = 'double',
+                    'Confirmed' = 'numeric',
+                    'Deaths' = 'numeric',
+                    'Recovered' = 'numeric',
+                    'Active' = 'numeric',
+                    'Combined_Key' = 'character',
+                    'Incident_Rate' = 'numeric',
+                    'Case_Fatality_Ratio' = 'numeric')
+  
+  what5 <- c('character', 'character', 'factor', 'character', 'character', 'double',
+             'double', 'numeric', 'numeric', 'numeric', 'numeric', 'character',
+             'numeric', 'numeric')
+  
+  files_2020 <- dir(pattern = "\\d{2}-\\d{2}-2020\\.csv")
+  #files_2021 <- dir(pattern = "\\d{2}-\\d{2}-2021\\.csv")
+  #files_2022 <- dir(pattern = "\\d{2}-\\d{2}-2022\\.csv")
+  files <- c(files_2020) # , files_2021, files_2022)
+  # the file format changed on 03.01.2020, 03.22.2020, 05.27.2020, and 11.09.2020:
+  # Files get sorted alphabetically, meaning Jan 2020 and Jan 2021 get conflated.
+  breakpoint1 <- which(files == "02-29-2020.csv")
+  breakpoint2 <- which(files == "03-21-2020.csv")
+  breakpoint3 <- which(files == "05-28-2020.csv")
+  breakpoint4 <- which(files == "11-08-2020.csv")
+  
+  files1 <- files[1:breakpoint1]
+  files2 <- files[(breakpoint1 + 1):breakpoint2]
+  files3 <- files[(breakpoint2 + 1):breakpoint3]
+  files4 <- files[(breakpoint3 + 1):breakpoint4]
+  files5 <- files[(breakpoint4 + 1):length(files)]
+  
+  # TODO save these files locally and just check to see if they exist instead
+  # of re-importing ALL the files every time.
+  # only covid5 would need to be imported "fresh" each time, and even then
+  # I could chunk the data into local files by months or something.
+  covid1 <- import_covid_subset(fileslist = files1, col_classes = col_classes1)
+  covid2 <- import_covid_subset(fileslist = files2, col_classes = col_classes2)
+  covid3 <- import_covid_subset(fileslist = files3, col_classes = col_classes3)
+  covid4 <- import_covid_subset(fileslist = files4, col_classes = col_classes4)
+  
+  covid5 <- import_covid_subset(fileslist = files5, col_classes = col_classes5)
+  
+  covid4$newfips <- sprintf("%05.0f", as.integer(covid4$FIPS))
+  covid4$stfips <- substr(covid4$newfips, 1,2)
+  covid4$cofips <- substr(covid4$newfips, 3,5)
+  
+  covid5$newfips <- sprintf("%05.0f", as.integer(covid5$FIPS))
+  covid5$stfips <- substr(covid5$newfips, 1,2)
+  covid5$cofips <- substr(covid5$newfips, 3,5)
+  
+  
+  # Set up the first two formats for a merge:
+  covid1$Longitude <- as.double(0.0)
+  covid1$Latitude <- as.double(0.0)
+  covid1 <- rbind(covid1, covid2)
+  
+  # The third format is a lot different.
+  covid3$Incidence_Rate <- 0.0
+  covid3$Case.Fatality_Ratio <- 0.0
+  
+  covid3$newfips <- sprintf("%05.0f", as.integer(covid3$FIPS))
+  covid3$stfips <- substr(covid3$newfips, 1,2)
+  covid3$cofips <- substr(covid3$newfips, 3,5)
+  
+  names(covid5) <- names(covid4)
+  covid3 <- rbind(covid3, covid4, covid5)
+  
+  # Fix a mammoth typo (three orders of magnitude in Okaloosa Co., FL):
+  covid3$Active[which(covid3$date == "2020-04-13" & covid3$FIPS == "12091")] <- 102
+  
+  message(sprintf('Writing file %s locally.', fn_year))
+  write.csv(covid3, file=fn_year, quote=TRUE, row.names=FALSE)
+  
+  return(covid3)
+}
+
+
+
+
+import_jhu <- function(year, filestub, check=TRUE) {
+  # Check for the csv for each completed year; this saves a lot of time loading.
+  fn_year = sprintf('%s%s.csv', filestub, year)
+  if (file.exists(fn_year) == TRUE && isTRUE(check)) {
+    message(sprintf("File %s exists locally.", fn_year))
+    covid3 <- read.csv(fn_year, stringsAsFactors = FALSE)
+    return(covid3)
+  } else if(isFALSE(check)) {
+    message(sprintf("Check set to False. Will read in individual files for %g.", year))
+  } else {
+    message(sprintf("File %s does not exist locally; will read in individual files", fn_year))
+  }
+  
+  col_classes5 <- c('FIPS' = 'character',
+                    'Admin2' = 'character',
+                    'Province_State' = 'factor',
+                    'Country_Region' = 'character',
+                    'Last_Update' = 'character',
+                    'Lat' = 'double',
+                    'Long_' = 'double',
+                    'Confirmed' = 'numeric',
+                    'Deaths' = 'numeric',
+                    'Recovered' = 'numeric',
+                    'Active' = 'numeric',
+                    'Combined_Key' = 'character',
+                    'Incident_Rate' = 'numeric',
+                    'Case_Fatality_Ratio' = 'numeric')
+  
+  what5 <- c('character', 'character', 'factor', 'character', 'character', 'double',
+             'double', 'numeric', 'numeric', 'numeric', 'numeric', 'character',
+             'numeric', 'numeric')
+  
+  files_yr <- dir(pattern = sprintf("\\d{2}-\\d{2}-%g\\.csv", year))
+  #files_2021 <- dir(pattern = "\\d{2}-\\d{2}-2021\\.csv")
+  #files_2022 <- dir(pattern = "\\d{2}-\\d{2}-2022\\.csv")
+  files <- c(files_yr) # , files_2021, files_2022)
+  covid5 <- import_covid_subset(fileslist = files, col_classes = col_classes5)
+  covid5$newfips <- sprintf("%05.0f", as.integer(covid5$FIPS))
+  covid5$stfips <- substr(covid5$newfips, 1,2)
+  covid5$cofips <- substr(covid5$newfips, 3,5)
+  names(covid5) <- c("FIPS", "Admin2", "Province_State", "Country_Region", 
+                     "Last_Update", "Lat", "Long_", "Confirmed", "Deaths", 
+                     "Recovered", "Active", "Combined_Key", "Incidence_Rate",
+                     "Case.Fatality_Ratio", "date", "newfips", "stfips",
+                     "cofips")
+  
+  message(sprintf('Writing file %s locally.', fn_year))
+  write.csv(covid5, file=fn_year, quote=TRUE, row.names=FALSE)
+  
+  return(covid5)
 }
 
 # EOF
