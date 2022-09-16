@@ -256,6 +256,9 @@ make_state_subset <- function(inputdf, state_map) {
 
 
 make_state_data <- function(inputdf, stfips = '48') {
+  #stfips <- as.numeric(stfips)
+  message(sprintf('Making state-level data for state FIPS %s', stfips))
+
   st_covid_base <- inputdf[which(inputdf$stfips == stfips),]
   
   if (length(st_covid_base) == 0) {
@@ -267,7 +270,7 @@ make_state_data <- function(inputdf, stfips = '48') {
     return(FALSE)
   }
   
-  st_covid_base$posixdate <- as.Date(st_covid_base$date, format = "%Y-%m-%d")
+  # st_covid_base$posixdate <- as.Date(st_covid_base$date, format = "%Y-%m-%d")
   st_covid <- aggregate(x = st_covid_base$Confirmed,
                         FUN = sum,
                         by = list(st_covid_base$posixdate))
@@ -278,6 +281,11 @@ make_state_data <- function(inputdf, stfips = '48') {
   st_covid$total_dead <- aggregate(x = st_covid_base$Deaths,
                                    FUN = sum,
                                    by = list(st_covid_base$posixdate))$x
+  
+  st_covid$total_dead[which(is.na(st_covid$total_dead))] <- 0
+  st_covid$Confirmed[which(is.na(st_covid$Confirmed))] <- 0
+  st_covid$total_dead[which(is.null(st_covid$total_dead))] <- 0
+  st_covid$Confirmed[which(is.null(st_covid$Confirmed))] <- 0
   
   st_covid$active_cases <- st_covid$Confirmed - st_covid$total_dead
   
@@ -1218,6 +1226,9 @@ import_jhu_2020 <- function(filestub) {
   # Fix a mammoth typo (three orders of magnitude in Okaloosa Co., FL):
   covid3$Active[which(covid3$date == "2020-04-13" & covid3$FIPS == "12091")] <- 102
   
+  covid3$posixdate <- as.Date(covid3$date, format = "%Y-%m-%d")
+  covid3$year <- as.numeric(strftime(covid3$posixdate, format = "%Y"))
+  
   message(sprintf('Writing file %s locally.', fn_year))
   write.csv(covid3, file=fn_year, quote=TRUE, row.names=FALSE)
   
@@ -1265,13 +1276,16 @@ import_jhu <- function(year, filestub, check=TRUE) {
   files <- c(files_yr) # , files_2021, files_2022)
   covid5 <- import_covid_subset(fileslist = files, col_classes = col_classes5)
   covid5$newfips <- sprintf("%05.0f", as.integer(covid5$FIPS))
-  covid5$stfips <- substr(covid5$newfips, 1,2)
-  covid5$cofips <- substr(covid5$newfips, 3,5)
+  covid5$stfips <- substr(covid5$newfips, 1, 2)
+  covid5$cofips <- substr(covid5$newfips, 3, 5)
   names(covid5) <- c("FIPS", "Admin2", "Province_State", "Country_Region", 
                      "Last_Update", "Lat", "Long_", "Confirmed", "Deaths", 
                      "Recovered", "Active", "Combined_Key", "Incidence_Rate",
                      "Case.Fatality_Ratio", "date", "newfips", "stfips",
                      "cofips")
+  
+  covid5$posixdate <- as.Date(covid5$date, format = "%Y-%m-%d")
+  covid5$year <- as.numeric(strftime(covid5$posixdate, format = "%Y"))
   
   message(sprintf('Writing file %s locally.', fn_year))
   write.csv(covid5, file=fn_year, quote=TRUE, row.names=FALSE)
