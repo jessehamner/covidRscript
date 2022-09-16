@@ -37,7 +37,7 @@ message(sprintf('As of today, there are %s days of data available.',
 homedir <- Sys.getenv('HOME')
 outputdir <- sprintf('%s/%s', homedir, 'covid')
 setwd(homedir)
-setwd('Dropbox/covidRscript')
+setwd('covidRscript')
 # Load helper functions for this work:
 source('covidfunctions.R')
 
@@ -174,11 +174,6 @@ covid_2021 <- import_jhu(year=2021, filestub=fn_stub)
 covid_2022 <- import_jhu(year=2022, filestub=fn_stub, check=FALSE)
 
 covid3 <- rbind(covid_2020, covid_2021, covid_2022)
-
-# Fix a mammoth typo (three orders of magnitude in Okaloosa Co., FL):
-covid3$Active[which(covid3$date == "2020-04-13" & covid3$FIPS == "12091")] <- 102
-
-covid3$year <- as.numeric(strftime(covid3$date, format = "%Y"))
 
 ################################################################################
 # New York Times US county-level data:
