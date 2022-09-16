@@ -305,34 +305,55 @@ get_us_population_by_county <- function(year = 2019) {
   uspoppath <- sprintf('2010-%s/counties/totals', year)
   uspopfile <- sprintf('co-est%s-alldata.csv', year)
   urlpath <- paste(uspopdataurl, uspoppath, uspopfile, sep='/')
-  uspopbycounty <- read.csv(file=urlpath, header=TRUE)
+  
+  # check for local file first:
+  if (file.exists(uspopfile) == TRUE) {
+    message(sprintf("File %s exists locally.", uspopfile))
+  } else {
+    message(sprintf("File %s does not exist locally; will download and save it.", uspopfile))
+    curl_download(url = urlpath,
+                  destfile = uspopfile, 
+                  quiet = TRUE, 
+                  mode = "wb", 
+                  handle = new_handle())
+    if (file.exists(uspopfile) == FALSE) {
+      message(sprintf("WARNING: Unable to download file %s from the web.", uspopfile)) 
+      stop()
+    }
+  }
+  
+  uspopbycounty <- read.csv(file=uspopfile, header=TRUE)
   uspopbycounty$stfips <- sprintf("%02.0f", uspopbycounty$STATE)
   uspopbycounty$cofips <- sprintf("%03.0f", uspopbycounty$COUNTY)
-  uspopbycounty$newfips <- sprintf("%02.0f%03.0f", uspopbycounty$STATE, uspopbycounty$COUNTY)
+  uspopbycounty$GEOID <- sprintf('%02g%03g', uspopbycounty$STATE, uspopbycounty$COUNTY)
+  uspopbycounty$newfips <- sprintf("%02g%03g", uspopbycounty$STATE, uspopbycounty$COUNTY)
   return(uspopbycounty)
 }
 
 
 get_texas_population_by_county <- function(year = 2019) {
-  texas_population_url <- sprintf('https://www.dshs.state.tx.us/chs/popdat/st%s.shtm', year)
-  tp1 <- GET(texas_population_url)
-  if(identical(status_code(tp1), 200L)){
-    texaspop <- read_html(tp1)
-    poplist <- texaspop %>%
-      html_nodes("table") %>%
-      .[[2]] %>% html_table()
-  } else {
-    stop()
+  zipfile <- sprintf("%g_ASRE_Estimate_alldata_csv.zip", year)
+  localfile <- 'alldata.csv'
+  texas_population_url <- sprintf('https://demographics.texas.gov/Resources/TPEPP/Estimates/%g/%s', year, zipfile)
+  
+  if(file.exists(zipfile) == FALSE) {
+    message("Source file not found. Will download from demographics.texas.gov")
+    curl_download(texas_population_url, 
+                  zipfile, 
+                  quiet = TRUE, 
+                  mode = "wb", 
+                  handle = new_handle()
+                 )
   }
   
-  cols_to_fix <- c('Total', 'Anglo', 'Black', 'Hispanic', 'Other')
-  colnums_to_fix <- which(names(poplist) %in% cols_to_fix)
-  
-  for(x in seq(1, length(cols_to_fix))) {
-    poplist[[cols_to_fix[x]]] <- as.numeric(gsub(',', '', poplist[[cols_to_fix[x]]]))
+  if (file.exists(zipfile) == FALSE) {
+    message(sprintf("WARNING: Unable to download file %s from network", zipfile)) 
+  } else {
+    rawfile <- unzip(zipfile)
+    texaspop <- read.csv(localfile, header=TRUE, stringsAsFactors = FALSE)
   }
 
-  return(poplist)
+  return(texaspop)
 }
 
 
