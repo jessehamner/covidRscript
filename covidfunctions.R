@@ -9,30 +9,7 @@
 library(httr)
 library(curl)
 
-
-import_fips_codes <- function(pageurl,
-                              fipscolclasses,
-                              filename = "statefipscodes.txt"){
-  
-  if (file.exists(filename) == TRUE) {
-    message(sprintf("File %s exists locally.", filename))
-    fipsurl = filename
-  } else {
-    message(sprintf("File %s does not exist locally; will retrieve from URL.", filename))
-    curl_download(url = pageurl, destfile = filename, quiet = TRUE, mode = "wb", handle = new_handle())
-    if (file.exists(filename) == FALSE) {
-      message(sprintf("WARNING: Unable to download file %s from the web.", filename)) 
-      stop()
-    }
-  }
-  
-  statefipscodes <- read.delim(filename, 
-                               header=TRUE, 
-                               sep = '|', 
-                               colClasses = fipscolclasses
-  )  
-  return(statefipscodes)
-}
+source('covid_data_retrieval_functions.R')
 
 
 make_country_subset <- function(dataset, cvar, cname) {
@@ -52,7 +29,10 @@ do_state_plots <- function(stfips,
                            inputjhu,
                            inputnyt,
                            stfipslist,
-                           sourcename = "Source: Johns Hopkins Univ. Center for Systems Science and Engineering") {
+                           sourcename="") {
+  if(sourcename == "") {
+    sourcename <- "Source: Johns Hopkins Univ. Center for Systems Science and Engineering"
+  }
   stname = stfipslist$STATE_NAME[which(stfipslist$STATE == stfips)]
   state_level <- make_state_data(inputdf = inputjhu, stfips = stfips)
   nyt_state_level <- nyt_state_match(nyt = inputnyt, stfips = stfips)
@@ -121,10 +101,11 @@ plot_daily_increase <- function(state, dataset,
 }
 
 
-plot_7day_ma <- function(state, dataset, 
-                                lookback_days = 14,
-                                sourcename = "Source: Johns Hopkins Univ. Center for Systems Science and Engineering") {
-  message(sprintf('Writing daily case increase graphic for %s', state))
+plot_7day_ma <- function(state, 
+                         dataset, 
+                         lookback_days = 14,
+                         sourcename = "Source: Johns Hopkins Univ. Center for Systems Science and Engineering") {
+  message(sprintf('plot_7day_ma(): Writing daily case increase graphic for %s', state))
   basic_plot(sprintf('%s_covid19_confirmed_daily_increase.png', gsub(' ', '_', state)),
              sevenday_mov_avg_plot(dataset,
                                    metro_label = state,
@@ -139,7 +120,9 @@ plot_7day_ma <- function(state, dataset,
 plot_cumulative_cases <- function(state, jhu_data, nyt_data){
   message(sprintf('Writing daily confirmed cases graphic for %s', state))
   basic_plot(sprintf('%s_covid19_confirmed_daily_active_cases.png', gsub(' ', '_', state)),
-             cumulative_cases_plot(jhu_data, nyt_metro_covid_match = nyt_data, area_label = state )
+             cumulative_cases_plot(jhu_data, 
+                                   nyt_metro_covid_match = nyt_data, 
+                                   area_label = state )
   )
   return (0)
 }
@@ -166,15 +149,18 @@ nyt_state_match <- function(nyt, stfips, startdate = "2020-03-21"){
 }
 
 
-make_metro_map <- function(countiesmap, msa_name, msalist, varname = 'CBSATitle') {
-  
-  msa_fips <- get_metro_fips_2(msalist, msa_name = msa_name, varname = varname)
-  
-  countiesmap$newfips <- sprintf('%s%s', countiesmap$STATEFP, countiesmap$COUNTYFP)
-  returnmap <- countiesmap[sapply(X = seq(1, nrow(msa_fips)), 
-                                  FUN = function(x){ which(countiesmap$newfips == msa_fips$newfips[x])}
-                                 ),]
-  return(returnmap)
+make_metro_map <- function(countiesmap, msa_name, msalist, 
+                           varname = 'CBSATitle') {
+
+  msa_fips <- get_metro_fips_2(msalist, msa_name=msa_name, varname=varname)
+  countiesmap$newfips <- sprintf('%s%s', 
+                                 countiesmap$STATEFP, 
+                                 countiesmap$COUNTYFP)
+  return(countiesmap[sapply(X = seq(1, nrow(msa_fips)), 
+                            FUN = function(x){ 
+                              which(countiesmap$newfips == msa_fips$newfips[x])
+                            }),]
+        )
 }
 
 
@@ -298,63 +284,6 @@ make_state_data <- function(inputdf, stfips = '48') {
   return(st_covid)
 }
 
-
-get_us_population_by_county <- function(year = 2019) {
-  # Good for 2010-2019:
-  uspopdataurl <- 'https://www2.census.gov/programs-surveys/popest/datasets'
-  uspoppath <- sprintf('2010-%s/counties/totals', year)
-  uspopfile <- sprintf('co-est%s-alldata.csv', year)
-  urlpath <- paste(uspopdataurl, uspoppath, uspopfile, sep='/')
-  
-  # check for local file first:
-  if (file.exists(uspopfile) == TRUE) {
-    message(sprintf("File %s exists locally.", uspopfile))
-  } else {
-    message(sprintf("File %s does not exist locally; will download and save it.", uspopfile))
-    curl_download(url = urlpath,
-                  destfile = uspopfile, 
-                  quiet = TRUE, 
-                  mode = "wb", 
-                  handle = new_handle())
-    if (file.exists(uspopfile) == FALSE) {
-      message(sprintf("WARNING: Unable to download file %s from the web.", uspopfile)) 
-      stop()
-    }
-  }
-  
-  uspopbycounty <- read.csv(file=uspopfile, header=TRUE)
-  uspopbycounty$stfips <- sprintf("%02.0f", uspopbycounty$STATE)
-  uspopbycounty$cofips <- sprintf("%03.0f", uspopbycounty$COUNTY)
-  uspopbycounty$GEOID <- sprintf('%02g%03g', uspopbycounty$STATE, uspopbycounty$COUNTY)
-  uspopbycounty$newfips <- sprintf("%02g%03g", uspopbycounty$STATE, uspopbycounty$COUNTY)
-  return(uspopbycounty)
-}
-
-
-get_texas_population_by_county <- function(year = 2019) {
-  zipfile <- sprintf("%g_ASRE_Estimate_alldata_csv.zip", year)
-  localfile <- 'alldata.csv'
-  texas_population_url <- sprintf('https://demographics.texas.gov/Resources/TPEPP/Estimates/%g/%s', year, zipfile)
-  
-  if(file.exists(zipfile) == FALSE) {
-    message("Source file not found. Will download from demographics.texas.gov")
-    curl_download(texas_population_url, 
-                  zipfile, 
-                  quiet = TRUE, 
-                  mode = "wb", 
-                  handle = new_handle()
-                 )
-  }
-  
-  if (file.exists(zipfile) == FALSE) {
-    message(sprintf("WARNING: Unable to download file %s from network", zipfile)) 
-  } else {
-    rawfile <- unzip(zipfile)
-    texaspop <- read.csv(localfile, header=TRUE, stringsAsFactors = FALSE)
-  }
-
-  return(texaspop)
-}
 
 
 basic_plot <- function(filename, plotobj, destination = Sys.getenv('HOME')) {
@@ -497,6 +426,10 @@ sevenday_mov_avg_plot <- function(metro_covid,
                                   sourcename="Source: Johns Hopkins Univ. Center for Systems Science and Engineering"){
   
   ymax_today <- max(metro_covid$newcases_07da) * 1.3
+  xmax <- as.numeric(max(metro_covid$posixdate))
+  xmin <- as.numeric(min(metro_covid$posixdate))
+  framewidth <- xmax - xmin
+  textposition <- 0.5 * framewidth
   #format(metro_covid$new_today,scientific=FALSE)
   options(scipen=5)
   plot(metro_covid$posixdate, 
@@ -510,10 +443,7 @@ sevenday_mov_avg_plot <- function(metro_covid,
        cex.lab = 0.9
   )
   
-  xmax <- as.numeric(max(metro_covid$posixdate))
-  xmin <- as.numeric(min(metro_covid$posixdate))
-  framewidth <- xmax - xmin
-  textposition <- 0.5 * framewidth
+
   daily_regression <- lm(metro_covid$newcases_07da ~ metro_covid$posixdate)
   slope_label <- sprintf("%0.1f", daily_regression$coefficients[[2]])
   last_week <- metro_covid[which(metro_covid$posixdate >= (max(metro_covid$posixdate) - lookback_days)),]
@@ -671,71 +601,6 @@ cumulative_cases_plot <- function(dfw_metro_covid,
 }
 
 
-import_covid_subset <- function(fileslist, col_classes){
-  
-  covid <- data.frame()
-  for (filename in fileslist) {
-    if (!file.exists(filename)) {
-      message(sprintf("Unable to find file %s", filename))
-      next()
-    }
-    message(sprintf("Importing file %s ", filename))
-    f1 <- read.csv(filename, 
-                   header = TRUE, 
-                   stringsAsFactors = FALSE,
-                   colClasses = col_classes,
-                   na.strings='#DIV/0!'
-    )
-    
-    message(sprintf("Success. Adding parsed date: %s", strsplit(filename, '\\.')[[1]][1]))
-    f1$date <- as.Date(strsplit(filename, '\\.')[[1]][1], format = "%m-%d-%Y")
-    # message('Binding rows to existing data:')
-    covid <- rbind(covid, f1)
-  }
-  return(covid)
-}
-
-
-get_texas_metro_county_list <- function(fipsurl, remote=TRUE){
-  txfips_colclasses <- c('character')
-  txfips_colnames <- c('CountyName', 
-                       'FIPS',
-                       'County',
-                       'PublicHealthRegion',
-                       'HealthServiceRegion',
-                       'MSA',
-                       'MD',
-                       'MetroArea',
-                       'NCHSUrbanRural_2006',
-                       'NCHSUrbanRural_2013',
-                       'Border_La_Paz',
-                       'Border'
-  )
-  
-  if (remote == FALSE){
-    portions <- unlist(strsplit(x = fipsurl, split = "/"))
-    localfile <- portions[length(portions)]
-    if (file.exists(localfile) == TRUE) {
-      message(sprintf("File %s exists locally.", localfile))
-      fipsurl = localfile
-    } else {
-      message(sprintf("File %s does not exist locally; will retrieve from URL.", localfile))
-      curl_download(txfipsurl, localfile, quiet = TRUE, mode = "wb", handle = new_handle())
-      if (file.exists(localfile) == FALSE) {
-        message(sprintf("WARNING: Unable to download file %s from network", localfile)) 
-      } else {
-        fipsurl = localfile
-      }
-    }
-  }
-    
-  txfips <- read.xls(xls = fipsurl,
-                     sheet = 'Sheet1',
-                     colClasses = txfips_colclasses
-                    )
-  names(txfips) <- txfips_colnames
-  return(txfips)
-}
 
 
 # For Texas only, at the present moment
@@ -770,57 +635,6 @@ get_metro_fips_locally <- function(fipsdir = Sys.getenv('HOME'),
   dfw_i <- which(txfips$Metropolitan.Statistical.Area..MSA. == msa_name)
   dfw_fips <- txfips$FIPS..[dfw_i]
   return(dfw_fips)
-}
-
-
-get_msa_list <- function(fileurl, col_classes, msafips_columns) {
-  localfilename <- 'excelfips.xls'
-  # Check to see if the file exists locally first:
-  if (file.exists(localfilename) == TRUE) {
-    message(sprintf("File %s exists locally.", localfilename))
-  } else {
-    message(sprintf("File %s does not exist locally; will retrieve from URL.", localfilename))
-    curl_download(url = fileurl,
-                  destfile = localfilename, 
-                  quiet = TRUE, 
-                  mode = "wb", 
-                  handle = new_handle())
-    if (file.exists(localfilename) == FALSE) {
-      message(sprintf("WARNING: Unable to download file %s from the web.", localfilename)) 
-      stop()
-    }
-  }
-  
-  msafips <- read.xls(xls = localfilename,
-                     pattern = 'CBSA Code',
-                     colClasses = col_classes
-                    )
-  names(msafips) <- msafips_columns
-  return(msafips)
-}
-
-
-get_pop_data <- function(localfilename, census_url) {
-  
-  if (file.exists(localfilename) == TRUE) {
-    message(sprintf("File %s exists locally.", localfilename))
-  } else {
-    message(sprintf("File %s does not exist locally; will retrieve from URL.", localfilename))
-    curl_download(url = census_url,
-                  destfile = localfilename, 
-                  quiet = TRUE, 
-                  mode = "wb", 
-                  handle = new_handle())
-    if (file.exists(localfilename) == FALSE) {
-      message(sprintf("WARNING: Unable to download file %s from the web.", localfilename)) 
-      stop()
-    }
-  }
-  
-  uspopdata <- read.csv(localfilename)
-  uspopdata$GEOID <- sprintf('%02g%03g', uspopdata$STATE, uspopdata$COUNTY)
-  
-  return(uspopdata)
 }
 
 
@@ -957,7 +771,7 @@ make_metro_map_generic <- function(countiesmap, msa_name, msalist, covid_data) {
 }
 
 
-metro_map_plot <- function(metrocountymap, todaytitle, todaysubtitle) {
+metro_map_plot <- function(metrocountymap, todaytitle, todaysubtitle, max_infected_pct) {
   theplot <- ggplot() +
     theme(plot.title = element_text(hjust = 0.5), 
           plot.subtitle = element_text(hjust = 0.5)
@@ -965,8 +779,11 @@ metro_map_plot <- function(metrocountymap, todaytitle, todaysubtitle) {
     geom_sf(data = metrocountymap,
             aes(fill = percent_infected)
     ) + 
-    scale_fill_gradient(high = highcolor,
-                        low = lowcolor
+    scale_fill_gradient2(high= highcolor,
+                        mid = midcolor,
+                        low = lowcolor,
+                        limits = c(0, max_infected_pct),
+                        midpoint = 0.4
     ) + 
     ggtitle(label = todaytitle,
             subtitle = todaysubtitle
@@ -1003,6 +820,7 @@ make_complete_metro_plot <- function(msalist,
                                      uscountiesmap,
                                      covid_data,
                                      dest_dir,
+                                     max_infected_pct,
                                      varname='CBSATitle') {
   
   setwd(dest_dir)
@@ -1016,7 +834,7 @@ make_complete_metro_plot <- function(msalist,
   
   todaytitle <- sprintf("%s COVID-19 Cases as of %s", msa_name, Sys.Date())
   todaysubtitle <- sprintf("and Percent of County Population Infected")
-  metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle)
+  metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle, max_infected_pct=max_infected_pct)
   todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", 
                               gsub(' ', '', gsub('-|,', '', msa_name)), Sys.Date())
   message(sprintf("Creating map: %s", todaymapfilename))
@@ -1025,293 +843,5 @@ make_complete_metro_plot <- function(msalist,
   return(TRUE)
 }
 
-
-get_iso_country_codes <- function() {
-  iso_codes_url <- "https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes"
-  filename <- 'isocodes.csv'
-  isonames <- c('countryname', 'officialname', 'sovereignty', 'alpha2',
-                'alpha3', 'numeric', 'subdiv', 'internet_tld')
-
-  # Check for a locally-cached copy first:
-  
-  if (file.exists(filename) == TRUE) {
-    message(sprintf("File %s exists locally.", filename))
-    cleaned_isocodes <- read.csv(filename)
-    
-  } else {
-
-    message(sprintf("File %s does not exist locally; will retrieve from URL.", filename))
-    isop1 <- GET(url=iso_codes_url)
-    if(identical(status_code(isop1), 200L)){
-      isopage <- read_html(isop1)
-    }
-    isocodes <- isopage %>% html_nodes("table") %>% .[[1]] %>% html_table(fill = TRUE)
-    names(isocodes) <- isonames
-    cleaned_isocodes <- isocodes[!grepl(' – See ', isocodes$countryname,
-                                        ignore.case = TRUE, perl = TRUE),]
-    cleaned_isocodes <- cleaned_isocodes[!grepl('Country name', cleaned_isocodes$countryname,
-                                                ignore.case = TRUE, perl = TRUE),]
-    
-    # Save the good data into filename:
-    write.csv(x = cleaned_isocodes, file = filename, quote = TRUE)
-    
-    # confirm the data write worked okay:
-    if (file.exists(filename) == FALSE) {
-      message(sprintf("WARNING: Unable to download file %s from the web.", filename)) 
-      stop()
-    }
-  }
-  return(cleaned_isocodes)
-}
-
-
-do_posixtime <- function(covid_data) {
-  covid_data$posixtime <- strptime(x = covid_data$Last_Update, format="%Y-%m-%d %H:%M:%S", tz="GMT")
-  covid_data[which(is.na(covid_data$posixtime)),]$posixtime <- strptime(x = covid_data[which(is.na(covid_data$posixtime)),]$Last_Update, 
-                                                                            tz="GMT",
-                                                                            format="%D %R")
-  covid_data[which(is.na(covid_data$posixtime)),]$posixtime <- strptime(x = covid_data[which(is.na(covid_data$posixtime)),]$Last_Update,
-                                                                            tz="GMT",
-                                                                            format="%m/%e/%y %R")
-  return(covid_data)
-}
-
-
-
-
-import_jhu_2020 <- function(filestub) {
-  year  <- 2020
-  # Check for the csv for each completed year; this saves a lot of time loading.
-  fn_year = sprintf('%s%s.csv', filestub, year)
-  if (file.exists(fn_year) == TRUE) {
-    message(sprintf("File %s exists locally.", fn_year))
-    covid3 <- read.csv(fn_year, stringsAsFactors = FALSE)
-    return(covid3)
-  } else {
-    message(sprintf("File %s does not exist locally; will read in individual files", fn_year))
-  }
-  
-  ################################################################################
-  # Johns Hopkins's data have changed format a few times.
-  ################################################################################
-  
-  # After 11/08/2020:
-  header5 <- c('FIPS', 'Admin2', 'Province_State', 'Country_Region', 'Last_Update',
-               'Lat', 'Long_', 'Confirmed', 'Deaths', 'Recovered', 'Active',
-               'Combined_Key', 'Incidence_Rate', 'Case_Fatality_Ratio'
-  )
-  
-  # After 5/29/2020:
-  header4 <- c('FIPS', 'Admin2', 'Province_State', 'Country_Region', 'Last_Update',
-               'Lat', 'Long_', 'Confirmed', 'Deaths', 'Recovered', 'Active',
-               'Combined_Key', 'Incidence_Rate', 'Case.Fatality_Ratio'
-  )
-  
-  # After 3/21/2020:
-  header3 <- c('FIPS', 'Admin2', 'Province_State', 'Country_Region', 'Last_Update',
-               'Lat', 'Long_', 'Confirmed', 'Deaths', 'Recovered', 'Active',
-               'Combined_Key'
-  )
-  
-  # on or before 3/21/2020 but after 02/29/2020:
-  header2 <- c('Province/State', 'Country/Region', 'Last Update', 'Confirmed', 
-               'Deaths', 'Recovered', 'Latitude', 'Longitude'
-  )
-  
-  # 02/29/2020 and before:
-  header1 <- c('Province/State', 'Country/Region', 'Last Update', 'Confirmed', 
-               'Deaths', 'Recovered'
-  )
-  
-  # datetime format: "2020-02-29T12:13:10"
-  # Province/State,Country/Region,Last Update,Confirmed,Deaths,Recovered
-  col_classes1 <- c('Province.State' = 'factor',
-                    'Country.Region' = 'character',
-                    'Last.Update' = 'character',
-                    'Confirmed' = 'numeric',
-                    'Deaths' = 'numeric',
-                    'Recovered' = 'numeric')
-  
-  col_classes2 <- c('Province.State' = 'factor',
-                    'Country.Region' = 'character',
-                    'Last.Update' = 'character',
-                    'Confirmed' = 'numeric',
-                    'Deaths' = 'numeric',
-                    'Recovered' = 'numeric',
-                    'Latitude' = 'double',
-                    'Longitude' = 'double')
-  
-  col_classes3 <- c('FIPS' = 'character',
-                    'Admin2' = 'character',
-                    'Province_State' = 'factor',
-                    'Country_Region' = 'character',
-                    'Last_Update' = 'character',
-                    'Lat' = 'double',
-                    'Long_' = 'double',
-                    'Confirmed' = 'numeric',
-                    'Deaths' = 'numeric',
-                    'Recovered' = 'numeric',
-                    'Active' = 'numeric',
-                    'Combined_Key' = 'character')
-  
-  # FIPS,Admin2,Province_State,Country_Region,Last_Update,Lat,Long_,Confirmed,Deaths,
-  # Recovered,Active,Combined_Key,Incidence_Rate,Case-Fatality_Ratio
-  col_classes4 <- c('FIPS' = 'character',
-                    'Admin2' = 'character',
-                    'Province_State' = 'factor',
-                    'Country_Region' = 'character',
-                    'Last_Update' = 'character',
-                    'Lat' = 'double',
-                    'Long_' = 'double',
-                    'Confirmed' = 'numeric',
-                    'Deaths' = 'numeric',
-                    'Recovered' = 'numeric',
-                    'Active' = 'numeric',
-                    'Combined_Key' = 'character',
-                    'Incidence_Rate' = 'numeric',
-                    'Case.Fatality_Ratio' = 'numeric')
-  
-  
-  col_classes5 <- c('FIPS' = 'character',
-                    'Admin2' = 'character',
-                    'Province_State' = 'factor',
-                    'Country_Region' = 'character',
-                    'Last_Update' = 'character',
-                    'Lat' = 'double',
-                    'Long_' = 'double',
-                    'Confirmed' = 'numeric',
-                    'Deaths' = 'numeric',
-                    'Recovered' = 'numeric',
-                    'Active' = 'numeric',
-                    'Combined_Key' = 'character',
-                    'Incident_Rate' = 'numeric',
-                    'Case_Fatality_Ratio' = 'numeric')
-  
-  what5 <- c('character', 'character', 'factor', 'character', 'character', 'double',
-             'double', 'numeric', 'numeric', 'numeric', 'numeric', 'character',
-             'numeric', 'numeric')
-  
-  files_2020 <- dir(pattern = "\\d{2}-\\d{2}-2020\\.csv")
-  #files_2021 <- dir(pattern = "\\d{2}-\\d{2}-2021\\.csv")
-  #files_2022 <- dir(pattern = "\\d{2}-\\d{2}-2022\\.csv")
-  files <- c(files_2020) # , files_2021, files_2022)
-  # the file format changed on 03.01.2020, 03.22.2020, 05.27.2020, and 11.09.2020:
-  # Files get sorted alphabetically, meaning Jan 2020 and Jan 2021 get conflated.
-  breakpoint1 <- which(files == "02-29-2020.csv")
-  breakpoint2 <- which(files == "03-21-2020.csv")
-  breakpoint3 <- which(files == "05-28-2020.csv")
-  breakpoint4 <- which(files == "11-08-2020.csv")
-  
-  files1 <- files[1:breakpoint1]
-  files2 <- files[(breakpoint1 + 1):breakpoint2]
-  files3 <- files[(breakpoint2 + 1):breakpoint3]
-  files4 <- files[(breakpoint3 + 1):breakpoint4]
-  files5 <- files[(breakpoint4 + 1):length(files)]
-  
-  # TODO save these files locally and just check to see if they exist instead
-  # of re-importing ALL the files every time.
-  # only covid5 would need to be imported "fresh" each time, and even then
-  # I could chunk the data into local files by months or something.
-  covid1 <- import_covid_subset(fileslist = files1, col_classes = col_classes1)
-  covid2 <- import_covid_subset(fileslist = files2, col_classes = col_classes2)
-  covid3 <- import_covid_subset(fileslist = files3, col_classes = col_classes3)
-  covid4 <- import_covid_subset(fileslist = files4, col_classes = col_classes4)
-  
-  covid5 <- import_covid_subset(fileslist = files5, col_classes = col_classes5)
-  
-  covid4$newfips <- sprintf("%05.0f", as.integer(covid4$FIPS))
-  covid4$stfips <- substr(covid4$newfips, 1,2)
-  covid4$cofips <- substr(covid4$newfips, 3,5)
-  
-  covid5$newfips <- sprintf("%05.0f", as.integer(covid5$FIPS))
-  covid5$stfips <- substr(covid5$newfips, 1,2)
-  covid5$cofips <- substr(covid5$newfips, 3,5)
-  
-  
-  # Set up the first two formats for a merge:
-  covid1$Longitude <- as.double(0.0)
-  covid1$Latitude <- as.double(0.0)
-  covid1 <- rbind(covid1, covid2)
-  
-  # The third format is a lot different.
-  covid3$Incidence_Rate <- 0.0
-  covid3$Case.Fatality_Ratio <- 0.0
-  
-  covid3$newfips <- sprintf("%05.0f", as.integer(covid3$FIPS))
-  covid3$stfips <- substr(covid3$newfips, 1,2)
-  covid3$cofips <- substr(covid3$newfips, 3,5)
-  
-  names(covid5) <- names(covid4)
-  covid3 <- rbind(covid3, covid4, covid5)
-  
-  # Fix a mammoth typo (three orders of magnitude in Okaloosa Co., FL):
-  covid3$Active[which(covid3$date == "2020-04-13" & covid3$FIPS == "12091")] <- 102
-  
-  covid3$posixdate <- as.Date(covid3$date, format = "%Y-%m-%d")
-  covid3$year <- as.numeric(strftime(covid3$posixdate, format = "%Y"))
-  
-  message(sprintf('Writing file %s locally.', fn_year))
-  write.csv(covid3, file=fn_year, quote=TRUE, row.names=FALSE)
-  
-  return(covid3)
-}
-
-
-
-
-import_jhu <- function(year, filestub, check=TRUE) {
-  # Check for the csv for each completed year; this saves a lot of time loading.
-  fn_year = sprintf('%s%s.csv', filestub, year)
-  if (file.exists(fn_year) == TRUE && isTRUE(check)) {
-    message(sprintf("File %s exists locally.", fn_year))
-    covid3 <- read.csv(fn_year, stringsAsFactors = FALSE)
-    return(covid3)
-  } else if(isFALSE(check)) {
-    message(sprintf("Check set to False. Will read in individual files for %g.", year))
-  } else {
-    message(sprintf("File %s does not exist locally; will read in individual files", fn_year))
-  }
-  
-  col_classes5 <- c('FIPS' = 'character',
-                    'Admin2' = 'character',
-                    'Province_State' = 'factor',
-                    'Country_Region' = 'character',
-                    'Last_Update' = 'character',
-                    'Lat' = 'double',
-                    'Long_' = 'double',
-                    'Confirmed' = 'numeric',
-                    'Deaths' = 'numeric',
-                    'Recovered' = 'numeric',
-                    'Active' = 'numeric',
-                    'Combined_Key' = 'character',
-                    'Incident_Rate' = 'numeric',
-                    'Case_Fatality_Ratio' = 'numeric')
-  
-  what5 <- c('character', 'character', 'factor', 'character', 'character', 'double',
-             'double', 'numeric', 'numeric', 'numeric', 'numeric', 'character',
-             'numeric', 'numeric')
-  
-  files_yr <- dir(pattern = sprintf("\\d{2}-\\d{2}-%g\\.csv", year))
-  #files_2021 <- dir(pattern = "\\d{2}-\\d{2}-2021\\.csv")
-  #files_2022 <- dir(pattern = "\\d{2}-\\d{2}-2022\\.csv")
-  files <- c(files_yr) # , files_2021, files_2022)
-  covid5 <- import_covid_subset(fileslist = files, col_classes = col_classes5)
-  covid5$newfips <- sprintf("%05.0f", as.integer(covid5$FIPS))
-  covid5$stfips <- substr(covid5$newfips, 1, 2)
-  covid5$cofips <- substr(covid5$newfips, 3, 5)
-  names(covid5) <- c("FIPS", "Admin2", "Province_State", "Country_Region", 
-                     "Last_Update", "Lat", "Long_", "Confirmed", "Deaths", 
-                     "Recovered", "Active", "Combined_Key", "Incidence_Rate",
-                     "Case.Fatality_Ratio", "date", "newfips", "stfips",
-                     "cofips")
-  
-  covid5$posixdate <- as.Date(covid5$date, format = "%Y-%m-%d")
-  covid5$year <- as.numeric(strftime(covid5$posixdate, format = "%Y"))
-  
-  message(sprintf('Writing file %s locally.', fn_year))
-  write.csv(covid5, file=fn_year, quote=TRUE, row.names=FALSE)
-  
-  return(covid5)
-}
 
 # EOF

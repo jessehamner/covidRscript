@@ -41,13 +41,23 @@ setwd('covidRscript')
 # Load helper functions for this work:
 source('covidfunctions.R')
 
-isocodes <- get_iso_country_codes()
-
 # Change this value to average the daily infection count growth rate 
 # for the last x days over a longer/shorter period:
 lookback_days <- 14
-
 start_year = 2020
+fn_stub <- 'r_covid_'
+
+msa_plot_list <- c('New Orleans-Metairie, LA',
+                   'Minneapolis-St. Paul-Bloomington, MN-WI',
+                   'Chicago-Naperville-Elgin, IL-IN-WI',
+                   'Huntsville, AL',
+                   'Atlanta-Sandy Springs-Alpharetta, GA',
+                   'Dallas-Fort Worth-Arlington, TX',
+                   'San Antonio-New Braunfels, TX',
+                   'Houston-The Woodlands-Sugar Land, TX',
+                   'Austin-Round Rock-Georgetown, TX',
+                   'Sulphur Springs, TX',
+                   'San Diego-Chula Vista-Carlsbad, CA')
 
 ################################################################################
 # FIPS list of DFW counties & MSAs: 
@@ -57,46 +67,38 @@ start_year = 2020
 ################################################################################
 
 # FIPS list of nationwide MSAs:
-msa_list_url <- 'https://www.census.gov/geographies/reference-files/time-series/demo/metro-micro/delineation-files.html'
-censusgov <- 'https://www2.census.gov/programs-surveys'
-excel_msa_list <- 'list1_2020.xls'
-msa_list_filename <- sprintf('%s/metro-micro/geographies/reference-files/2020/delineation-files/%s', censusgov, excel_msa_list)
-uscopopdata_filename <- 'co-est2019-alldata.csv'
-uspopdataurl <- sprintf('%s/popest/datasets/2010-2019/counties/totals/%s', censusgov, uscopopdata_filename)
+
 msafips_columns <- c('CBSACode', 'MetropolitanDivisionCode', 'CSACode',
                      'CBSATitle', 'MSAName', 'MetropolitanDivisionTitle',
                      'CSATitle', 'County_or_Equivalent', 'StateName',
                      'stfips', 'cofips', 'Central_or_Outlying_County')
-msafips_colclasses = c('CBSA.Code' = 'character',
-                       'Metropolitan.Division.Code' = 'character',
-                       'CSA.Code' = 'character',
-                       'CBSA.Title' = 'character',
-                       'Metropolitan.Micropolitan.Statistical.Area' = 'character',
-                       'Metropolitan.Division.Title' = 'character',
-                       'CSA.Title' = 'character',
-                       'County.County.Equivalent' = 'character',
-                       'State.Name' = 'character',
-                       'FIPS.State.Code' = 'character',
-                       'FIPS.County.Code' = 'character',
-                       'Central.Outlying.County' = 'character'
-                      )
 
 # POPESTIMATE2019 is the most recent estimated population field in this file:
 uspopdata <- get_pop_data(localfilename=uscopopdata_filename, 
                           census_url=uspopdataurl)
+# poplist uses NUMERIC FIPS codes for counties. The rest of the data frames should not.
+poplist <- get_us_population_by_county(2019)
 
 msalist <- get_msa_list(fileurl = msa_list_filename, 
                         col_classes = msafips_colclasses,
                         msafips_columns = msafips_columns)
-msaname <- 'New Orleans-Metairie, LA'
-nola_fips <- get_metro_fips_2(msalist, msa_name = msaname, varname = 'CBSATitle')
 
-lowcolor <- "#EEEEEE"
-highcolor <- "#00002A"
+mapdir <- 'Downloads/GIS Data'
+uscountiesmap <- get_county_maps(homedir=homedir, 
+                                 mapdir=mapdir, 
+                                 uspopdata=uspopdata)
 
-txfipsurl <- 'http://www.dshs.state.tx.us/chs/info/TxCoPhrMsa.xls'
+lowcolor <- "#FFFFBB"
+# lowcolor <- "#FFFF22"
+# midcolor <- "#3030A0"
+midcolor <- "#0000a0"
+# midcolor <- "#b00000"
+# highcolor <- "#b00000"
+highcolor  <- "#000010"
 
 # Check for the file locally so we don't have to go get it every time:
+setwd(homedir)
+setwd('covidRscript')
 txfips <- get_texas_metro_county_list(fipsurl = txfipsurl, remote=FALSE)
 metro_msa_name <- 'Dallas-Fort Worth-Arlington'
 dfw_fips <- get_metro_fips(txfips, metro_msa_name)
@@ -120,7 +122,6 @@ if (length(dfw_fips) == 0) {
 ################################################################################
 
 fipscolclasses <- c("character", "character", "character", "character")
-fipsurl <- 'https://www2.census.gov/geo/docs/reference/state.txt?#'
 statefipscodes <- import_fips_codes(pageurl = fipsurl, 
                                     fipscolclasses = fipscolclasses
                                    )
@@ -145,6 +146,11 @@ col_classes5 <- c('FIPS' = 'character',
                   'Incident_Rate' = 'numeric',
                   'Case_Fatality_Ratio' = 'numeric')
 
+# ISO country codes:
+setwd(homedir)
+setwd('covidRscript')
+isocodes <- get_iso_country_codes()
+
 ################################################################################
 # Update and import the Johns Hopkins COVID-19 data:
 # https://github.com/CSSEGISandData/COVID-19/
@@ -156,48 +162,31 @@ col_classes5 <- c('FIPS' = 'character',
 
 repo <- 'COVID-19'
 datadir <- 'csse_covid_19_data/csse_covid_19_daily_reports/'
-covid <- data.frame()
-
-# Get list of daily data files with file pattern like: "04-02-2020.csv"
-setwd(paste(homedir, repo, sep = "/"))
-system('git config pull.rebase false')
-system('git pull')
-
-setwd(datadir)
+sync_jhu(homedir=homedir, repo=repo)
+setwd(paste(homedir, repo, datadir, sep = '/'))
 
 # Check for the csv for each completed year; this saves a lot of time loading.
-
-fn_stub <- 'r_covid_'
-
 covid_2020 <- import_jhu_2020(filestub=fn_stub)
 covid_2021 <- import_jhu(year=2021, filestub=fn_stub)
 covid_2022 <- import_jhu(year=2022, filestub=fn_stub, check=FALSE)
-
 covid3 <- rbind(covid_2020, covid_2021, covid_2022)
+
+covid3 <- add_percent_infected(covid3, uspopdata, newfips=statefipscodes) 
+
+# Some very small counties have infection rates over 100%, probably because of
+# seasonal workers or visitors.  We'll still count them, but just make the 
+# Maximum infected percentage equal to counties a bit larger, to avoid 
+# unbalancing the range of infection rates.
+max_infected_pct <- max(covid3$percent_infected[which(covid3$population > 2000)])
+max_infected_pct <- 0.95 * max_infected_pct
+message(sprintf("Max infected percent of counties over 2000 population: %0.2f%%", max_infected_pct))
 
 ################################################################################
 # New York Times US county-level data:
 ################################################################################
 
-nyt_repo <- 'nytimescovid'
-nyt_header <- c('date','county','state','fips','cases','deaths')
-nyt_col_classes <- c('date' = 'character',
-                     'county' = 'character',
-                     'state' = 'character',
-                     'fips' = 'character',
-                     'cases' = 'numeric',
-                     'deaths' = 'numeric')
-
-setwd(paste(homedir, nyt_repo, sep = '/'))
-system('git config pull.rebase false')
-system('git pull')
-nyt <- read.csv('us-counties.csv',
-                header = TRUE, 
-                stringsAsFactors = FALSE,
-                colClasses = nyt_col_classes
-)
-nyt$posixdate <- as.Date(nyt$date, format = "%Y-%m-%d")
-
+sync_nyt(homedir=homedir)
+nyt <- get_nyt(homedir=homedir)
 
 ################################################################################
 # EU / ECDC data:
@@ -221,6 +210,7 @@ ecdclabel <- "Source: European Centre for Disease Prevention and Control"
 ################################################################################
 
 setwd(outputdir)
+
 lapply(X = statefipscodes[,1],
        FUN = do_state_plots,
        inputjhu = covid3,
@@ -245,22 +235,9 @@ lapply(X = statefipscodes[,1],
 # Metro plots for MSAs (aggregated)
 ################################################################################
 
-msa_plot_list <- c('New Orleans-Metairie, LA',
-                   'Minneapolis-St. Paul-Bloomington, MN-WI',
-                   'Chicago-Naperville-Elgin, IL-IN-WI',
-                   'Huntsville, AL',
-                   'Atlanta-Sandy Springs-Alpharetta, GA',
-                   'Dallas-Fort Worth-Arlington, TX',
-                   'San Antonio-New Braunfels, TX',
-                   'Houston-The Woodlands-Sugar Land, TX',
-                   'Austin-Round Rock-Georgetown, TX',
-                   'Sulphur Springs, TX',
-                   'San Diego-Chula Vista-Carlsbad, CA')
-
 setwd(outputdir)
 texas_metros <- c()
 state <- 'DFW Metro'
-
 
 make_metro_plots(areaname = state,
                  countysubset = dfw_fips,
@@ -296,28 +273,7 @@ make_metro_plots(areaname = state,
 # https://www.census.gov/geographies/mapping-files/2015/geo/carto-boundary-file.html
 # 
 #
-
 ################################################################################
-
-mapdir <- 'Downloads/GIS Data'
-stateshapes <- 'tl_2017_us_state'
-uscountymapdir <- 'countyboundaries'
-uscountymap <- 'cb_2015_us_county_5m.shp'
-
-setwd(paste(homedir, mapdir, sep='/'))
-setwd(uscountymapdir)
-
-
-uscountiesmap <- st_read(uscountymap, stringsAsFactors = FALSE)
-uscountiesmap$Population <- 0
-for (i in seq(1, nrow(uscountiesmap))) {
-  matcher <- which(uspopdata$GEOID == uscountiesmap$GEOID[i])
-  if (length(matcher) != 0) {
-    uscountiesmap$Population[i] <- uspopdata$POPESTIMATE2019[matcher]
-  }
-}
-
-
 
 #metro_fips$newfips <- sprintf('%s%s', metro_fips$stfips, metro_fips$cofips)
 setwd(paste(homedir, mapdir, sep='/'))
@@ -330,7 +286,9 @@ metrocountymap <- make_metro_map(countiesmap = uscountiesmap,
                                 )
 
 metro_covid3 <- covid3[unlist(lapply(X = seq(1, nrow(metro_fips)),
-                                     FUN = function(x) { which(covid3$newfips == metro_fips$newfips[x]) }
+                                     FUN = function(x) { 
+                                       which(covid3$newfips == metro_fips$newfips[x])
+                                     }
                                     )
                              )
                       ,]
@@ -341,7 +299,8 @@ metrocountymap$Confirmed <- 0
 
 for (x in seq(1, nrow(covid3_metro_yesterday))) {
     replacement <- covid3_metro_yesterday$Confirmed[which(covid3_metro_yesterday$newfips == metrocountymap$GEOID[x])]
-    message(sprintf('X: %s\t FIPS: %s\treplacement value: %s', x, covid3_metro_yesterday$newfips[x], replacement))
+    message(sprintf('X: %s\t FIPS: %s\treplacement value: %s', 
+                    x, covid3_metro_yesterday$newfips[x], replacement))
     if (length(replacement) > 0) {
       metrocountymap$Confirmed[x] <- replacement
     }
@@ -359,7 +318,10 @@ metrocountymap$percent_infected <- 100 * (metrocountymap$Confirmed / metrocounty
 todaytitle <- sprintf("%s COVID-19 Cases as of %s", msaname, Sys.Date())
 todaysubtitle <- sprintf("and Percent of County Population Infected")
 
-metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle)
+metro_plot <- metro_map_plot(metrocountymap,
+                             todaytitle,
+                             todaysubtitle,
+                             max_infected_pct=max_infected_pct)
 
 todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", 
                             gsub(' ', '', gsub('-|,', '', msaname)), Sys.Date()
@@ -380,6 +342,7 @@ for(i in seq(1:length(msa_plot_list))) {
                            msa_name = msa_plot_list[i],
                            uscountiesmap = uscountiesmap,
                            covid_data = covid3,
+                           max_infected_pct = max_infected_pct,
                            dest_dir = outputdir)
 }
 
@@ -400,11 +363,6 @@ dfw_counties_map$Confirmed <- as.numeric(lapply(X = dfw_counties_map$GEOID,
       ))
 
 dfw_counties_map$Confirmed[which(is.na(dfw_counties_map$Confirmed))] <- 0
-
-# poplist uses NUMERIC FIPS codes for counties. The rest of the data frames should not.
-poplist <- get_us_population_by_county(2019)
-
-
 dfw_counties_map$Population <- 0
 dfw_counties_map$Population <- as.numeric(lapply(X = as.numeric(dfw_counties_map$GEOID), 
                                                  FUN = function(x) {
@@ -425,8 +383,11 @@ dfw_plot <- ggplot() +
   geom_sf(data = dfw_counties_map,
           aes(fill = percent_infected)
          ) + 
-  scale_fill_gradient(high = highcolor,
-                      low = lowcolor
+  scale_fill_gradient2(high= highcolor,
+                      mid = midcolor,
+                      low = lowcolor,
+                      limits = c(0, max_infected_pct),
+                      midpoint = 40
                      ) + 
   ggtitle(label = todaytitle,
           subtitle = todaysubtitle
@@ -485,13 +446,8 @@ state_map$POPESTIMATE2019 <- sapply(X=state_map$GEOID,
 # sum cases over unique counties (no dates)
 # sum new cases *today* over unique counties (only today's date)
 # 
-
-
-
 # covid3 -- 'Confirmed' and 'Deaths', clocked by 'date' -- converted 
 # ecdcdata -- "cases" and "deaths", clocked by 'dateRep' or 'day', 'month', 'year'
-
-
 
 countries <- c('DEU', 'FRA')
 #cabbr <- 'AFG'
