@@ -88,17 +88,20 @@ uscountiesmap <- get_county_maps(homedir=homedir,
                                  mapdir=mapdir, 
                                  uspopdata=uspopdata)
 
-lowcolor <- "#FFFFBB"
+assign("lowcolor", "#FFFFBB", envir = .GlobalEnv)
+# lowcolor <- "#FFFFBB"
 # lowcolor <- "#FFFF22"
 # midcolor <- "#3030A0"
-midcolor <- "#0000a0"
+assign("midcolor", "#1111a0", envir = .GlobalEnv)
+# midcolor <- "#0000a0"
 # midcolor <- "#b00000"
 # highcolor <- "#b00000"
-highcolor  <- "#000010"
+assign("highcolor", "#000030", envir = .GlobalEnv)
+# highcolor  <- "#000010"
 
-# Check for the file locally so we don't have to go get it every time:
 setwd(homedir)
 setwd('covidRscript')
+
 txfips <- get_texas_metro_county_list(fipsurl = txfipsurl, remote=FALSE)
 metro_msa_name <- 'Dallas-Fort Worth-Arlington'
 dfw_fips <- get_metro_fips(txfips, metro_msa_name)
@@ -107,7 +110,7 @@ dfw_fips <- get_metro_fips(txfips, metro_msa_name)
 # and create the data frame another way. Download the file and convert it to 
 # a CSV directly, then execute this command:
 if (length(dfw_fips) == 0) {
-  message('Oops -- unable to convert the Texas Metro area FIPS file.')
+  stop('Oops -- unable to convert the Texas Metro area FIPS file.')
   converted_fips_file_name <- 'PHR_MSA_County_masterlist.csv'
   dfw_fips <- get_metro_fips_locally(fipsdir = paste(homedir, 'Dropbox', sep = '/'), 
                                      msa_name = metro_msa_name,
@@ -166,20 +169,42 @@ sync_jhu(homedir=homedir, repo=repo)
 setwd(paste(homedir, repo, datadir, sep = '/'))
 
 # Check for the csv for each completed year; this saves a lot of time loading.
-covid_2020 <- import_jhu_2020(filestub=fn_stub)
-covid_2021 <- import_jhu(year=2021, filestub=fn_stub)
-covid_2022 <- import_jhu(year=2022, filestub=fn_stub, check=FALSE)
-covid3 <- rbind(covid_2020, covid_2021, covid_2022)
+covid_2020 <- import_jhu_2020(filestub=fn_stub, uspopdata=uspopdata, statefipscodes=statefipscodes)
 
-covid3 <- add_percent_infected(covid3, uspopdata, newfips=statefipscodes) 
+covid_2021 <- import_jhu(year=2021, uspopdata=uspopdata, statefipscodes=statefipscodes, check=FALSE)
+covid_2022 <- import_jhu(year=2022, uspopdata=uspopdata, statefipscodes=statefipscodes, check=FALSE)
+if(isFALSE(covid_2022)) { stop('Unable to import because of bad FIPS code formatting.') }
+
+covid3 <- rbind(covid_2020, covid_2021, covid_2022)
+covid3 <- covid3[which(covid3$FIPS %notin% c("00", "0")),]
+
+# assign MSA values to each county observation:
+covid3 <- assign_msa(covid3, msalist)
+
+
+options(scipen=1000000)
+hist(covid3$percent_infected, 
+     xlab="Percent Infected in Each County", 
+     xlim=c(0, 60),
+     ylab="Frequency",
+     ylim=c(0, 1500000),
+     main="Histogram of Percent Infected in the US, by County")
 
 # Some very small counties have infection rates over 100%, probably because of
 # seasonal workers or visitors.  We'll still count them, but just make the 
 # Maximum infected percentage equal to counties a bit larger, to avoid 
 # unbalancing the range of infection rates.
-max_infected_pct <- max(covid3$percent_infected[which(covid3$population > 2000)])
-max_infected_pct <- 0.95 * max_infected_pct
-message(sprintf("Max infected percent of counties over 2000 population: %0.2f%%", max_infected_pct))
+max_infected_pct <- 0.95 * max(covid3$percent_infected[which(covid3$population > 2000)])
+assign("max_infected_pct", max_infected_pct, envir = .GlobalEnv)
+message(sprintf("Max infected percent of counties over 2,000 population: %0.2f%%", max_infected_pct))
+
+if(max(covid3$posixdate) <= strptime(x = sprintf("12-31-%s", 
+                                                 strftime(Sys.Date() - 365,
+                                                          format="%Y")),
+                                     format="%m-%d-%Y")) {
+  stop('Most recent date in Covid-19 data is from last year!!')
+}
+
 
 ################################################################################
 # New York Times US county-level data:
@@ -217,6 +242,9 @@ lapply(X = statefipscodes[,1],
        inputnyt = nyt,
        stfipslist = statefipscodes)
 
+#
+# do_state_plots(stfips = '01', inputjhu = covid3, inputnyt = nyt, stfipslist = statefipscodes)
+#
 
 # An example of doing one state manually instead of with -lapply-
 # state <- 'Texas'
@@ -294,7 +322,7 @@ metro_covid3 <- covid3[unlist(lapply(X = seq(1, nrow(metro_fips)),
                       ,]
 
 metro_covid3 <- do_posixtime(metro_covid3) 
-covid3_metro_yesterday <- metro_covid3[which(metro_covid3$date == as.Date(max(metro_covid3$posixtime)) - 1),]
+covid3_metro_yesterday <- metro_covid3[which(metro_covid3$date == as.Date(max(metro_covid3$posixtime)) - 1), ]
 metrocountymap$Confirmed <- 0
 
 for (x in seq(1, nrow(covid3_metro_yesterday))) {
@@ -307,13 +335,6 @@ for (x in seq(1, nrow(covid3_metro_yesterday))) {
 }
 
 metrocountymap$percent_infected <- 100 * (metrocountymap$Confirmed / metrocountymap$Population)
-
-
-#metrocountymap <- metrocountymap %>% 
-#  dplyr::mutate(newcases_07da = zoo::rollmean(new_today, k=7, fill=NA)) %>% 
-#  dplyr::ungroup()
-#metrocountymap <- metrocountymap[which(!is.na(metrocountymap$newcases_07da)),]
-
 
 todaytitle <- sprintf("%s COVID-19 Cases as of %s", msaname, Sys.Date())
 todaysubtitle <- sprintf("and Percent of County Population Infected")
@@ -431,17 +452,28 @@ png(filename = mapname,
   dfw_plot
 dev.off()
 
+uscountiesmap$POPESTIMATE2019 <- 0
+uscountiesmap$POPESTIMATE2019 <- sapply(X=uscountiesmap$GEOID,
+                                        FUN=function(x){
+                                          poplist$POPESTIMATE2019[which(poplist$newfips==x)]
+                                        }
+                                        )
 
-# Make a county-level plot by state, using, say, txcountymap:
-state_code <- '48'
-state_map <- uscountiesmap[which(uscountiesmap$STATEFP == state_code),]
-covid3_state <- txcovid3[which(txcovid3$stfips == state_code),]
-covid3_state_counties <- unique(covid3_state$cofips)
-state_map$POPESTIMATE2019 <- 0
-state_map$POPESTIMATE2019 <- sapply(X=state_map$GEOID,
-                                    FUN = function(x){
-                                      poplist$POPESTIMATE2019[which(poplist$newfips == x)]
-                                    })
+# Make a county-level plot foe one state:
+setwd(outputdir)
+state_map <- make_state_map(uscountiesmap=uscountiesmap, 
+               state_code='48', 
+               statefipscodes=statefipscodes)
+
+
+lapply(X=statefipscodes$STATE[which(statefipscodes$STATE %notin% c("02", "15"))],
+       FUN=function(x) {make_state_map(uscountiesmap=uscountiesmap, 
+                                       state_code=x, 
+                                       statefipscodes=statefipscodes)})
+
+make_state_map(uscountiesmap=uscountiesmap, 
+               state_code="49", 
+               statefipscodes=statefipscodes)
 
 # sum cases over unique counties (no dates)
 # sum new cases *today* over unique counties (only today's date)

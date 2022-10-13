@@ -10,9 +10,11 @@ library(curl)
 msa_list_url <- 'https://www.census.gov/geographies/reference-files/time-series/demo/metro-micro/delineation-files.html'
 censusgov <- 'https://www2.census.gov/programs-surveys'
 excel_msa_list <- 'list1_2020.xls'
-msa_list_filename <- sprintf('%s/metro-micro/geographies/reference-files/2020/delineation-files/%s', censusgov, excel_msa_list)
+msa_list_filename <- sprintf('%s/metro-micro/geographies/reference-files/2020/delineation-files/%s',
+                             censusgov, excel_msa_list)
 uscopopdata_filename <- 'co-est2019-alldata.csv'
-uspopdataurl <- sprintf('%s/popest/datasets/2010-2019/counties/totals/%s', censusgov, uscopopdata_filename)
+uspopdataurl <- sprintf('%s/popest/datasets/2010-2019/counties/totals/%s',
+                        censusgov, uscopopdata_filename)
 
 msafips_colclasses = c('CBSA.Code' = 'character',
                        'Metropolitan.Division.Code' = 'character',
@@ -134,11 +136,46 @@ import_covid_subset <- function(fileslist, col_classes){
                    na.strings='#DIV/0!'
     )
     
-    message(sprintf("Success. Adding parsed date: %s", strsplit(filename, '\\.')[[1]][1]))
+    # Some states only report aggregated results for some counties, 
+    # such as Massachusetts, that reports Dukes county and Nantucket county
+    # in a combined fashion, with NO FIPS CODE attached. I choose to combine them
+    # into a FIPS code of 25099, and to merge the two county polygons. 
+    # Also need to merge their populations, lest they report weird percentages.
+    # What a pain in the ass.
+    
+    f1$FIPS[which(f1$Combined_Key == "Dukes and Nantucket, Massachusetts, US")] <- "25099"
+    
+
+    
+    message(sprintf("Adding parsed date: %s", strsplit(filename, '\\.')[[1]][1]))
     f1$date <- as.Date(strsplit(filename, '\\.')[[1]][1], format = "%m-%d-%Y")
-    # message('Binding rows to existing data:')
+    f1$posixdate <- as.Date(f1$date, format = "%Y-%m-%d")
+    f1$year <- as.numeric(strftime(f1$posixdate, format = "%Y"))
+    f1 <- cbind(f1, as.data.frame(matrix(data="0", nrow=nrow(f1), 
+                                         ncol=3, byrow=TRUE))
+               )
+    names(f1)[which(names(f1) %in% c("V1", "V2", "V3"))] <- 
+      c('newfips', 'stfips', 'cofips')
+    
+    if ("FIPS" %in% names(f1)) {
+      nofips <- which(is.na(f1$FIPS))
+      f1$FIPS[nofips] <- "00"
+      f1$FIPS <- sprintf("%05g", as.integer(f1$FIPS))
+      f1$newfips <- f1$FIPS
+      f1$stfips <- substr(f1$newfips, 1, 2)
+      f1$cofips <- substr(f1$newfips, 3, 5)
+    } else {
+      f1$FIPS <- "0"
+    }
+    
     covid <- rbind(covid, f1)
   }
+    
+  if(check_unique_fips(covid) == FALSE) {
+    stop(sprintf('Bad formatting for FIPS codes in file ', filename), call.=TRUE)
+    return(FALSE)
+  }
+  
   return(covid)
 }
 
@@ -209,6 +246,7 @@ get_msa_list <- function(fileurl, col_classes, msafips_columns) {
                       colClasses = col_classes
   )
   names(msafips) <- msafips_columns
+  msafips$FIPS <- paste(msafips$stfips, msafips$cofips, sep='')
   return(msafips)
 }
 
@@ -233,6 +271,14 @@ get_pop_data <- function(localfilename, census_url) {
   uspopdata <- read.csv(localfilename)
   uspopdata$GEOID <- sprintf('%02g%03g', uspopdata$STATE, uspopdata$COUNTY)
   
+  # Get Dukes and Nantucket counties, MA:
+  newrow <- uspopdata[which(uspopdata$GEOID %in% c("25007", "25019")),]
+  newrow[1, 8:110] <- newrow[1, 8:110] + newrow[2, 8:110]
+  newrow$CTYNAME[1] <- "Dukes and Nantucket Counties"
+  newrow$COUNTY[1] <- 99
+  newrow[1, 111:164] <- NA  # Can't fairly report rates
+  uspopdata <- rbind(uspopdata, newrow[1,])
+
   return(uspopdata)
 }
 
@@ -279,16 +325,44 @@ get_iso_country_codes <- function() {
 
 
 
-import_jhu_2020 <- function(filestub) {
+import_jhu_2020 <- function(filestub='r_covid_', uspopdata, statefipscodes) {
   year  <- 2020
   # Check for the csv for each completed year; this saves a lot of time loading.
   fn_year = sprintf('%s%s.csv', filestub, year)
   if (file.exists(fn_year) == TRUE) {
     message(sprintf("File %s exists locally.", fn_year))
-    covid3 <- read.csv(fn_year, stringsAsFactors = FALSE)
+    
+    ccc1 <- c('FIPS' = 'character',
+              'Admin2' = 'character',
+              'Province_State' = 'factor',
+              'Country_Region' = 'character',
+              'Last_Update' = 'character',
+              'Lat' = 'double',
+              'Long_' = 'double',
+              'Confirmed' = 'numeric',
+              'Deaths' = 'numeric',
+              'Recovered' = 'numeric',
+              'Active' = 'numeric',
+              'Combined_Key' = 'character',
+              'Incident_Rate' = 'numeric',
+              'Case_Fatality_Ratio' = 'numeric',
+              'date' = 'character',
+              'posixdate' = 'character', 
+              'year' = 'numeric'
+              )
+    
+    # "FIPS","Admin2","Province_State","Country_Region","Last_Update",
+    # "Lat","Long_","Confirmed","Deaths","Recovered","Active","Combined_Key",
+    # "Incidence_Rate","Case.Fatality_Ratio","date","posixdate","year",
+    # "newfips","stfips","cofips","population","percent_infected"
+    covid3 <- read.csv(fn_year, stringsAsFactors = FALSE, colClasses = ccc1)
+    # Force date and posixtime to be doubles, not character strings:
+    covid3$date <- as.Date(covid3$date)
+    covid3$posixdate <- as.Date(covid3$posixdate)
+
     return(covid3)
   } else {
-    message(sprintf("File %s does not exist locally; will read in individual files", fn_year))
+    message(sprintf("File %s not found locally; reading individual files", fn_year))
   }
   
   ################################################################################
@@ -387,17 +461,17 @@ import_jhu_2020 <- function(filestub) {
                     'Incident_Rate' = 'numeric',
                     'Case_Fatality_Ratio' = 'numeric')
   
-  what5 <- c('character', 'character', 'factor', 'character', 'character', 'double',
-             'double', 'numeric', 'numeric', 'numeric', 'numeric', 'character',
-             'numeric', 'numeric')
+  what5 <- c('character', 'character', 'factor', 'character', 'character',
+             'double', 'double', 'numeric', 'numeric', 'numeric', 'numeric',
+             'character', 'numeric', 'numeric')
   
   files_2020 <- dir(pattern = "\\d{2}-\\d{2}-2020\\.csv")
-  #files_2021 <- dir(pattern = "\\d{2}-\\d{2}-2021\\.csv")
-  #files_2022 <- dir(pattern = "\\d{2}-\\d{2}-2022\\.csv")
-  files <- c(files_2020) # , files_2021, files_2022)
+  files <- c(files_2020)
   # the file format changed on 03.01.2020, 03.22.2020, 05.27.2020, and 11.09.2020:
   # Files get sorted alphabetically, meaning Jan 2020 and Jan 2021 get conflated.
   breakpoint1 <- which(files == "02-29-2020.csv")
+
+  # Files from here on out have FIPS codes for US entities.
   breakpoint2 <- which(files == "03-21-2020.csv")
   breakpoint3 <- which(files == "05-28-2020.csv")
   breakpoint4 <- which(files == "11-08-2020.csv")
@@ -408,26 +482,12 @@ import_jhu_2020 <- function(filestub) {
   files4 <- files[(breakpoint3 + 1):breakpoint4]
   files5 <- files[(breakpoint4 + 1):length(files)]
   
-  # TODO save these files locally and just check to see if they exist instead
-  # of re-importing ALL the files every time.
-  # only covid5 would need to be imported "fresh" each time, and even then
-  # I could chunk the data into local files by months or something.
   covid1 <- import_covid_subset(fileslist = files1, col_classes = col_classes1)
   covid2 <- import_covid_subset(fileslist = files2, col_classes = col_classes2)
   covid3 <- import_covid_subset(fileslist = files3, col_classes = col_classes3)
   covid4 <- import_covid_subset(fileslist = files4, col_classes = col_classes4)
-  
   covid5 <- import_covid_subset(fileslist = files5, col_classes = col_classes5)
-  
-  covid4$newfips <- sprintf("%05.0f", as.integer(covid4$FIPS))
-  covid4$stfips <- substr(covid4$newfips, 1,2)
-  covid4$cofips <- substr(covid4$newfips, 3,5)
-  
-  covid5$newfips <- sprintf("%05.0f", as.integer(covid5$FIPS))
-  covid5$stfips <- substr(covid5$newfips, 1,2)
-  covid5$cofips <- substr(covid5$newfips, 3,5)
-  
-  
+
   # Set up the first two formats for a merge:
   covid1$Longitude <- as.double(0.0)
   covid1$Latitude <- as.double(0.0)
@@ -437,18 +497,19 @@ import_jhu_2020 <- function(filestub) {
   covid3$Incidence_Rate <- 0.0
   covid3$Case.Fatality_Ratio <- 0.0
   
-  covid3$newfips <- sprintf("%05.0f", as.integer(covid3$FIPS))
-  covid3$stfips <- substr(covid3$newfips, 1,2)
-  covid3$cofips <- substr(covid3$newfips, 3,5)
-  
   names(covid5) <- names(covid4)
   covid3 <- rbind(covid3, covid4, covid5)
+  
+  #covid3$newfips <- sprintf("%05.0f", as.integer(covid3$FIPS))
+  #covid3$stfips <- substr(covid3$newfips, 1,2)
+  #covid3$cofips <- substr(covid3$newfips, 3,5)
+  covid3$date <- as.Date(covid3$date)
+  covid3$posixdate <- as.Date(covid3$posixdate)
   
   # Fix a mammoth typo (three orders of magnitude in Okaloosa Co., FL):
   covid3$Active[which(covid3$date == "2020-04-13" & covid3$FIPS == "12091")] <- 102
   
-  covid3$posixdate <- as.Date(covid3$date, format = "%Y-%m-%d")
-  covid3$year <- as.numeric(strftime(covid3$posixdate, format = "%Y"))
+  covid3 <- add_percent_infected(covid3, uspopdata, newfips=statefipscodes)
   
   message(sprintf('Writing file %s locally.', fn_year))
   write.csv(covid3, file=fn_year, quote=TRUE, row.names=FALSE)
@@ -459,12 +520,37 @@ import_jhu_2020 <- function(filestub) {
 
 
 
-import_jhu <- function(year, filestub, check=TRUE) {
+import_jhu <- function(year, 
+                       uspopdata, 
+                       statefipscodes, 
+                       check=TRUE, 
+                       filestub='r_covid_') {
   # Check for the csv for each completed year; this saves a lot of time loading.
   fn_year = sprintf('%s%s.csv', filestub, year)
   if (file.exists(fn_year) == TRUE && isTRUE(check)) {
     message(sprintf("File %s exists locally.", fn_year))
+    ccc1 <- c('FIPS' = 'character',
+              'Admin2' = 'character',
+              'Province_State' = 'factor',
+              'Country_Region' = 'character',
+              'Last_Update' = 'character',
+              'Lat' = 'double',
+              'Long_' = 'double',
+              'Confirmed' = 'numeric',
+              'Deaths' = 'numeric',
+              'Recovered' = 'numeric',
+              'Active' = 'numeric',
+              'Combined_Key' = 'character',
+              'Incident_Rate' = 'numeric',
+              'Case_Fatality_Ratio' = 'numeric',
+              'date' = 'character',
+              'posixdate' = 'character', 
+              'year' = 'numeric'
+    )
     covid3 <- read.csv(fn_year, stringsAsFactors = FALSE)
+    covid3 <- read.csv(fn_year, stringsAsFactors = FALSE, colClasses = ccc1)
+    covid3$date <- as.Date(covid3$date)
+    covid3$posixdate <- as.Date(covid3$posixdate)
     return(covid3)
   } else if(isFALSE(check)) {
     message(sprintf("Check set to False. Will read in individual files for %g.", year))
@@ -492,21 +578,23 @@ import_jhu <- function(year, filestub, check=TRUE) {
              'numeric', 'numeric')
   
   files_yr <- dir(pattern = sprintf("\\d{2}-\\d{2}-%g\\.csv", year))
-  #files_2021 <- dir(pattern = "\\d{2}-\\d{2}-2021\\.csv")
-  #files_2022 <- dir(pattern = "\\d{2}-\\d{2}-2022\\.csv")
-  files <- c(files_yr) # , files_2021, files_2022)
-  covid5 <- import_covid_subset(fileslist = files, col_classes = col_classes5)
-  covid5$newfips <- sprintf("%05.0f", as.integer(covid5$FIPS))
-  covid5$stfips <- substr(covid5$newfips, 1, 2)
-  covid5$cofips <- substr(covid5$newfips, 3, 5)
+  files <- c(files_yr)
+  covid5 <- import_covid_subset(fileslist = files, 
+                                col_classes = col_classes5
+                               )
+  if(isFALSE(covid5)) {
+    return(FALSE)
+  }
+  #covid5$newfips <- sprintf("%05.0f", as.integer(covid5$FIPS))
+  #covid5$stfips <- substr(covid5$newfips, 1, 2)
+  #covid5$cofips <- substr(covid5$newfips, 3, 5)
   names(covid5) <- c("FIPS", "Admin2", "Province_State", "Country_Region", 
                      "Last_Update", "Lat", "Long_", "Confirmed", "Deaths", 
                      "Recovered", "Active", "Combined_Key", "Incidence_Rate",
-                     "Case.Fatality_Ratio", "date", "newfips", "stfips",
-                     "cofips")
+                     "Case.Fatality_Ratio", "date", "posixdate", "year", 
+                     "newfips", "stfips", "cofips")
   
-  covid5$posixdate <- as.Date(covid5$date, format = "%Y-%m-%d")
-  covid5$year <- as.numeric(strftime(covid5$posixdate, format = "%Y"))
+  covid5 <- add_percent_infected(covid5, uspopdata=uspopdata, newfips=statefipscodes)
   
   message(sprintf('Writing file %s locally.', fn_year))
   write.csv(covid5, file=fn_year, quote=TRUE, row.names=FALSE)
@@ -584,19 +672,67 @@ get_county_maps <- function(homedir, mapdir, uspopdata) {
     }
   }
 
+  # merge combined county data into both Dukes and Nantucket counties because
+  # MA doesn't report them separately.
+  merged_polys <- dukes_and_nantucket(cofips1="019",
+                                      cofips2="007",
+                                      statecode="25", 
+                                      mergedname="Dukes and Nantucket",
+                                      countymap=uscountiesmap,
+                                      newcountycode="099"
+                                     )
+  
+  uscountiesmap <- rbind(uscountiesmap[which(uscountiesmap$GEOID %notin% c("25019", "25007")),],
+                         merged_polys)
+  
   return(uscountiesmap)
 }
+
+
+dukes_and_nantucket <- function(cofips1, cofips2, statecode, 
+                                mergedname, countymap,  newcountycode="099") {
+  # merge combined county data into both Dukes and Nantucket counties because
+  # MA doesn't report them separately.
+  d1 <- sprintf("%s%s", statecode, cofips1)
+  d2 <- sprintf("%s%s", statecode, cofips2)
+  dukes <- which(countymap$GEOID==d1)
+  nantucket <- which(countymap$GEOID==d2)
+  merged_polys <- st_union(x=countymap[nantucket, ],
+                           y=countymap[dukes, ],
+                           by_feature=FALSE,
+                           is_coverage=TRUE
+  )
+  merged_polys <- merged_polys[, c(1:9, 21, 10)]
+  
+  merged_polys$GEOID <- sprintf("%s%s", statecode, newcountycode)
+  merged_polys$COUNTYFP <- newcountycode
+  merged_polys$NAME <- mergedname
+  merged_polys$ALAND <- countymap$ALAND[dukes] + countymap$ALAND[nantucket]
+  merged_polys$AWATER <- countymap$AWATER[dukes] + countymap$AWATER[nantucket]
+  merged_polys$Population <- countymap$Population[dukes] + countymap$Population[nantucket]
+  merged_polys$AFFGEOID <- NA
+  merged_polys$COUNTYNS <- NA
+
+  return(merged_polys)
+}
+
 
 
 add_percent_infected <- function(covid_data, uspopdata, newfips) {
   cd <- covid_data[which(covid_data$Country_Region == "US"),]
   uniquefips <- unique(cd$newfips)
-  cd$population <- NA
   
+  if(isFALSE(check_unique_fips(cd))) {
+    stop(sprintf('Bad formatting for FIPS codes in covid data frame.'))
+    return(FALSE)
+  }
+  
+  cd$population <- NA
   uspopdata$stfips <- sprintf("%02g", uspopdata$STATE)
   uspopdata$cofips <- sprintf("%03g", uspopdata$COUNTY)
   countypop <- uspopdata[which(uspopdata$COUNTY != 0),]
   pop_states_list <- unique(countypop$stfips)
+  badstates <- c()
   
   for(y in seq(1, length(uniquefips))) {
     myrow <- which(cd$newfips == uniquefips[y])
@@ -605,8 +741,12 @@ add_percent_infected <- function(covid_data, uspopdata, newfips) {
       next();
     }
     if(length(st_abbr) > 1) {
-      message("More than one state FIPS code for this entry!")
-      message(sprintf("%s", st_abbr))
+      stop("More than one state FIPS code for this entry!")
+      bad_fips <- "Offending FIPS: "
+      for(i in seq(1, length(st_abbr))) {
+        bad_fips <- (sprintf("%s %s,", bad_fips, st_abbr[i]))        
+      }
+      message(bad_fips)
     }
     if(st_abbr %in% pop_states_list) {
       message(sprintf("%s -- %s, count: %g", uniquefips[y], st_abbr, length(myrow)))
@@ -617,14 +757,113 @@ add_percent_infected <- function(covid_data, uspopdata, newfips) {
       cd$population[myrow] <- 
         countypop$POPESTIMATE2019[which(countypop$GEOID==uniquefips[y])]
     } else {
-      message(sprintf("Skipping State FIPS Code %s", st_abbr))
+      if (!st_abbr %in% badstates) {
+        badstates <- c(badstates, st_abbr)
+      }
     }
   }
   
+  bs <- "Skipped State FIPS Codes: "
+  if(length(badstates == 0)) {
+    bs <- sprintf("%s None.", bs)
+  } else {
+    for (i in seq(1, length(badstates))) {
+      bs <- sprintf("%s, %s", bs, badstates[i]) 
+    }
+  }
+  message(bs)
   cd$population[which(is.na(cd$cofips))] <- 0
   cd$percent_infected <- 100 * cd$Confirmed / cd$population
   
   return(cd)
 }
+
+
+
+check_unique_fips <- function(dataset) {
+  uniquefips <- unique(dataset$newfips)
+  for(y in seq(1, length(uniquefips))) {
+    myrow <- which(dataset$newfips == uniquefips[y])
+    st_abbr <- unique(dataset$stfips[myrow])
+    if("00" %in% st_abbr) {
+      next();
+    }
+    if(length(st_abbr) > 1) {
+      message("More than one state FIPS code for this entry!")
+      bad_fips <- "Offending FIPS: "
+      for(i in seq(1, length(st_abbr))) {
+        bad_fips <- (sprintf("%s %s,", bad_fips, st_abbr[i]))        
+      }
+      message(bad_fips)
+      return(FALSE)
+    }
+  }
+  return(TRUE)
+}
+
+
+gather_bad_fips <- function(covid_data, uspopdata, newfips) {
+  cd <- covid_data[which(covid_data$Country_Region == "US"),]
+  uniquefips <- unique(cd$newfips)
+  
+  if(isFALSE(check_unique_fips(cd))) {
+    stop(sprintf('Bad formatting for FIPS codes in covid data frame.'))
+    return(FALSE)
+  }
+  
+  cd$population <- NA
+  uspopdata$stfips <- sprintf("%02g", uspopdata$STATE)
+  uspopdata$cofips <- sprintf("%03g", uspopdata$COUNTY)
+  countypop <- uspopdata[which(uspopdata$COUNTY != 0),]
+  pop_states_list <- unique(countypop$stfips)
+  badstates <- c()
+  skipped <- c()
+  skiptext <- ""
+
+  for(y in seq(1, length(uniquefips))) {
+    myrow <- which(cd$newfips == uniquefips[y])
+    st_abbr <- unique(cd$stfips[myrow])
+    state_alpha <- cd$Province_State[myrow[1]]
+    if(length(st_abbr) > 1) {
+      stop("More than one state FIPS code for this entry!")
+      bad_fips <- "Offending FIPS: "
+      for(i in seq(1, length(st_abbr))) {
+        bad_fips <- (sprintf("%s, %s: %s,", bad_fips, st_abbr[i], state_alpha))
+      }
+      message(bad_fips)
+    }
+    if(st_abbr %in% pop_states_list) {
+      # message(sprintf("%s -- %s, count: %g", uniquefips[y], st_abbr, length(myrow)))
+      if (length(which(countypop$GEOID == uniquefips[y])) == 0) {
+        if (!uniquefips[y] %in% skipped) {
+          skipped <- c(skipped, uniquefips[y])
+          skiptext <- sprintf("%s, %s, %s, %s", 
+                              cd$FIPS[myrow], cd$stfips[myrow], 
+                              cd$cofips[myrow], cd$date[myrow])
+        }
+        next()
+      }
+      next()
+    }
+    
+    if (!st_abbr %in% badstates) {
+      badstates <- c(badstates, st_abbr)
+      }
+  }
+  bs <- as.character(badstates[1])
+  message('Bad state codes: ')
+  for (i in seq(2, length(badstates))) {
+    bs <- sprintf("%s %s, ", bs, as.character(badstates[i]))
+  }
+  message(sprintf("%s", bs))
+  
+  
+  if (length(skipped) > 0) {
+    message(sprintf("Skipped:\n%s", skiptext))
+  } else {
+    message("Skipped: None")
+  }
+}
+
 
 # EOF

@@ -221,7 +221,8 @@ make_state_subset <- function(inputdf, state_map) {
   metro_covid_base$posixdate <- as.Date(metro_covid_base$date, format = "%Y-%m-%d")
   metro_covid <- aggregate(x = metro_covid_base$Confirmed,
                            FUN = sum,
-                           by = list(metro_covid_base$posixdate, metro_covid_base$cofips)
+                           by = list(metro_covid_base$posixdate,
+                                     metro_covid_base$cofips)
                           )
   names(metro_covid) <- c('posixdate', 'cofips', 'Confirmed')
   
@@ -230,13 +231,12 @@ make_state_subset <- function(inputdf, state_map) {
   
   metro_covid$total_dead <- aggregate(x = metro_covid_base$Deaths,
                                       FUN = sum,
-                                      by = list(metro_covid_base$posixdate, metro_covid_base$cofips))$x
+                                      by = list(metro_covid_base$posixdate, 
+                                                metro_covid_base$cofips))$x
 
   metro_covid$active_cases <- metro_covid$Confirmed - metro_covid$total_dead
   
   # Now we have county-level data for each day. Can push it into the map.
-  
-  
   return(metro_covid)
 }
 
@@ -426,6 +426,9 @@ sevenday_mov_avg_plot <- function(metro_covid,
                                   sourcename="Source: Johns Hopkins Univ. Center for Systems Science and Engineering"){
   
   ymax_today <- max(metro_covid$newcases_07da) * 1.3
+
+  metro_covid <- metro_covid[which(!is.na(metro_covid$posixdate)), ]
+    
   xmax <- as.numeric(max(metro_covid$posixdate))
   xmin <- as.numeric(min(metro_covid$posixdate))
   framewidth <- xmax - xmin
@@ -601,15 +604,42 @@ cumulative_cases_plot <- function(dfw_metro_covid,
 }
 
 
+assign_msa <- function(dataframe, msalist) {
+  # assign CBSACode, CBSATitle, CSACode, CSATitle, and Central_or_Outlying_County
+  # based on stfips and cofips values (note they are text fields) in dataframe
+  
+  dataframe$CBSACode <- NA
+  dataframe$CSACode <- NA
+  dataframe$CBSATitle <- NA
+  dataframe$CSATitle <- NA
+  dataframe$Central_or_Outlying_County <- NA
+  ucs <- unique(dataframe$FIPS)
+  for(i in seq(1, nrow(msalist))) {
+    if(msalist$FIPS[i] %in% ucs) {
+      right_rows <- which(dataframe$FIPS == msalist$FIPS[i])
+      dataframe$CBSACode[right_rows] <- msalist$CBSACode[i]
+      dataframe$CBSATitle[right_rows] <- msalist$CBSATitle[i]
+      dataframe$CSACode[right_rows] <- msalist$CSACode[i]
+      dataframe$CSATitle[right_rows] <- msalist$CSATitle[i]
+      dataframe$Central_or_Outlying_County <- msalist$Central_or_Outlying_County[i]
+    }
+  }
+
+  return(dataframe)
+}
+  
+
 
 
 # For Texas only, at the present moment
-get_metro_fips <- function(fipslist, msa_name){
+get_metro_fips <- function(fipslist, msa_name, statefips='48'){
   
   metro_i <- which(fipslist$MSA == msa_name)
     # metro_fips <- as.numeric(fipslist$FIPS[metro_i])
-  metro_fips <- subset(x = fipslist[metro_i,], select = which(names(fipslist) %in% c('FIPS')) )
-  metro_fips$stfips <- '48'
+  metro_fips <- subset(x = fipslist[metro_i,], 
+                       select = which(names(fipslist) %in% c('FIPS'))
+                      )
+  metro_fips$stfips <- statefips
   names(metro_fips) <- c('cofips', 'stfips')
   return(metro_fips)
 }
@@ -646,7 +676,8 @@ make_metro_plots <- function(areaname,
                              stfips,
                              lookback_days) {
   
-  metro_covid <- make_metro_subset(inputdf = jhudata, cofipslist = countysubset)
+  metro_covid <- make_metro_subset(inputdf = jhudata, 
+                                   cofipslist = countysubset)
   message('Metro subset dates:')
   message(sprintf("%s,\n", metro_covid$posixdate))
   nyt_metro <- nyt_subset(nytdata = nytdata,
@@ -718,10 +749,7 @@ make_metro_map_generic <- function(countiesmap, msa_name, msalist, covid_data) {
                                msalist = msalist
   )
   
-  # Aggregated data for the entire MSA:
-  # metro_covid3 <- make_metro_subset(inputdf = covid3, cofipslist = nola_fips)
-  
-  # COVID-19 data broken out by counties:
+  # Aggregated data for the entire MSA. COVID-19 data broken out by counties
   m_c_3_data_rows <- sapply(X = seq(1, nrow(metro_fips)),
                             FUN = function(x) { 
                               which(covid_data$stfips == metro_fips$stfips[x] & 
@@ -741,15 +769,15 @@ make_metro_map_generic <- function(countiesmap, msa_name, msalist, covid_data) {
   message('Subsetting metro_covid3 with the rows in m_c_3_data_rows.')
   metro_covid3 <- covid_data[m_c_3_data_rows,]
   
-  cv_m_yest <- metro_covid3[which(metro_covid3$date == Sys.Date() - 1),]
+  cv_m_yest <- metro_covid3[which(metro_covid3$date == max(metro_covid3$date)),]
   met_co_map$Confirmed <- 0
-  met_co_map$Confirmed <- cv_m_yest$Confirmed[sapply(X = seq(1,nrow(met_co_map)),
+  met_co_map$Confirmed <- cv_m_yest$Confirmed[unlist(sapply(X = seq(1, nrow(met_co_map)),
                                                      FUN = function(x) {
                                                        which(cv_m_yest$cofips == met_co_map$COUNTYFP[x] & 
                                                              cv_m_yest$stfips == met_co_map$STATEFP[x]
                                                             )
                                                      }
-                                                    )
+                                                    ))
                                              ]
   
   met_co_map$Confirmed[which(is.na(met_co_map$Confirmed))] <- 0
@@ -771,7 +799,10 @@ make_metro_map_generic <- function(countiesmap, msa_name, msalist, covid_data) {
 }
 
 
-metro_map_plot <- function(metrocountymap, todaytitle, todaysubtitle, max_infected_pct) {
+metro_map_plot <- function(metrocountymap, 
+                           todaytitle, 
+                           todaysubtitle, 
+                           max_infected_pct) {
   theplot <- ggplot() +
     theme(plot.title = element_text(hjust = 0.5), 
           plot.subtitle = element_text(hjust = 0.5)
@@ -783,7 +814,9 @@ metro_map_plot <- function(metrocountymap, todaytitle, todaysubtitle, max_infect
                         mid = midcolor,
                         low = lowcolor,
                         limits = c(0, max_infected_pct),
-                        midpoint = 0.4
+                        na.value = "#aaaaaa",
+                        space="Lab",
+                        midpoint=max_infected_pct/2
     ) + 
     ggtitle(label = todaytitle,
             subtitle = todaysubtitle
@@ -825,7 +858,9 @@ make_complete_metro_plot <- function(msalist,
   
   setwd(dest_dir)
   message(sprintf("MSA: %s", msa_name))
-  metro_fips <- get_metro_fips_2(msalist, msa_name = msa_name, varname = 'CBSATitle')
+  metro_fips <- get_metro_fips_2(msalist, 
+                                 msa_name = msa_name, 
+                                 varname = 'CBSATitle')
   metrocountymap <- make_metro_map_generic(countiesmap = uscountiesmap,
                                            msa_name = msa_name,
                                            msalist = msalist, 
@@ -834,7 +869,10 @@ make_complete_metro_plot <- function(msalist,
   
   todaytitle <- sprintf("%s COVID-19 Cases as of %s", msa_name, Sys.Date())
   todaysubtitle <- sprintf("and Percent of County Population Infected")
-  metro_plot <- metro_map_plot(metrocountymap, todaytitle, todaysubtitle, max_infected_pct=max_infected_pct)
+  metro_plot <- metro_map_plot(metrocountymap, 
+                               todaytitle, 
+                               todaysubtitle, 
+                               max_infected_pct=max_infected_pct)
   todaymapfilename <- sprintf("%s_covid19_metromap_%s.png", 
                               gsub(' ', '', gsub('-|,', '', msa_name)), Sys.Date())
   message(sprintf("Creating map: %s", todaymapfilename))
@@ -843,5 +881,80 @@ make_complete_metro_plot <- function(msalist,
   return(TRUE)
 }
 
+
+make_state_map <- function(uscountiesmap, state_code, statefipscodes) {
+  statename <- statefipscodes$STATE_NAME[which(statefipscodes$STATE == as.character(state_code))]
+  todaytitle <- sprintf("%s COVID-19 County Map as of %s", statename, Sys.Date())
+  todaysubtitle <- sprintf("with Percent of County Population Infected")
+  message(sprintf("Statewide map for %s", statename))
+  state_map <- uscountiesmap[which(uscountiesmap$STATEFP == state_code),]
+  state_map$infected_pct <- NA
+  state_map$infected_pct <- sapply(X=state_map$GEOID, 
+                                   FUN=function(x) {
+                                     covid3$percent_infected[which(covid3$FIPS==x & covid3$posixdate == max(covid3$posixdate))]
+                                   }
+  )
+  
+  state_map$rounded_percent <- round(state_map$infected_pct, digits = 0)
+  bad <- which(state_map$rounded_percent > 60)
+  worst <- which(state_map$rounded_percent == round(max(state_map$infected_pct), digits=0))
+  least <- which(state_map$rounded_percent == round(min(state_map$infected_pct), digits=0))
+  state_map$county_label <- ""
+  state_map$county_label[least] <- sprintf("%g%%", state_map$rounded_percent[least])
+  state_map$county_label[bad] <- sprintf("%g%%", state_map$rounded_percent[bad])
+  state_map$county_label[worst] <- sprintf("%g%%", state_map$rounded_percent[worst])
+  
+  for (i in seq(worst)) {
+    if(state_map$rounded_percent[i] > 100){
+      state_map$county_label[i] <- ">100%"
+    }
+  }
+  
+  stmap1 <- state_map[which(state_map$county_label != ""),]
+  
+  state_county_plot <- ggplot() +
+    theme(plot.title = element_text(hjust = 0.5), 
+          plot.subtitle = element_text(hjust = 0.5)
+    ) +
+    geom_sf(data = state_map,
+            aes(fill = infected_pct)
+    ) + 
+    scale_fill_gradient2(high= highcolor,
+                         mid = midcolor,
+                         low = lowcolor,
+                         limits = c(0, max_infected_pct),
+                         midpoint = 40
+    ) + 
+    ggtitle(label = todaytitle,
+            subtitle = todaysubtitle
+    ) +
+    coord_sf(label_axes = list(bottom = "Longitude",
+                               left = "Latitude")
+    ) + 
+    geom_sf_label(data = stmap1,
+                  aes(label = county_label, geometry = geometry),
+                  nudge_y = 0.09
+    ) +
+    guides(fill = guide_colorbar(title="Percent\nInfected")) + 
+    theme(legend.justification=c(0.0, 0.0),
+          legend.position=c(0.89, 0.02)
+    ) + 
+    labs(x = "", y = "")  ### +
+  #geom_sf_label(data = state_map,
+  #              na.rm = TRUE, 
+  #              nudge_y = 0.09,
+  #              mapping = aes(label = NAME,
+  #                            geometry = geometry
+  #              ),
+  #              color = "gray40",
+  #              fill = "#ffffdd"
+  #)
+  todaymapfilename <- sprintf("%s_covid19_statemap_%s.png", 
+                              gsub(' ', '_', statefipscodes$STATE_NAME[which(statefipscodes$STATE == state_code)]),
+                              Sys.Date()
+  )
+  ggsave(todaymapfilename, plot=state_county_plot)
+  return(state_county_plot)
+}
 
 # EOF
